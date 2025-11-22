@@ -1,17 +1,48 @@
 export default function UploadArea({ onFileChange }) {
   return (
-    <div className="w-full max-w-xl p-12 border-2 border-dashed border-gray-700 rounded-2xl bg-gray-800/30 hover:bg-gray-800/60 transition flex flex-col items-center justify-center text-center h-[60vh]">
-      <div className="mb-6 p-5 bg-gray-800 rounded-full shadow-xl">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
+    <div className="flex-1 flex items-center justify-center p-6 bg-gray-950">
+      <div className="w-full max-w-lg relative group cursor-pointer">
+        {/* Glowing Effect behind */}
+        <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl blur opacity-25 group-hover:opacity-50 transition duration-500"></div>
+        
+        <div className="relative w-full p-12 border border-gray-800 rounded-3xl bg-gray-900/90 backdrop-blur-xl flex flex-col items-center justify-center text-center hover:bg-gray-900 transition-all duration-300">
+          <div className="mb-6 p-6 bg-gray-800 rounded-2xl shadow-inner group-hover:scale-110 transition-transform duration-300">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-12 w-12 text-blue-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-2 text-white">Start Editing</h2>
+          <p className="text-gray-500 mb-8 text-sm">
+            Drag & drop an image here, or click to browse.<br/>
+            Supports JPG, PNG, WEBP.
+          </p>
+          
+          <label className="cursor-pointer bg-white text-black hover:bg-blue-50 px-8 py-3 rounded-xl font-bold shadow-lg shadow-white/10 transition transform active:scale-95 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
+            Select Image
+            <input
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={onFileChange}
+            />
+          </label>
+        </div>
       </div>
-      <h2 className="text-3xl font-bold mb-3 text-white">Upload Image</h2>
-      <p className="text-gray-400 mb-8">JPG, PNG, or WEBP</p>
-      <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:shadow-blue-500/20 transition transform hover:scale-105 active:scale-95">
-        Choose File
-        <input type="file" className="hidden" accept="image/*" onChange={onFileChange} />
-      </label>
     </div>
-  )
+  );
 }
