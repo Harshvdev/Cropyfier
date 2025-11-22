@@ -282,7 +282,7 @@ function App() {
   const filterString = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 
   return (
-    <div className="h-screen h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
+    <div className="h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
       {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
       
       <Header version="v7.6 Final Stable" />
