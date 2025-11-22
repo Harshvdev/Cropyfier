@@ -4,13 +4,22 @@ import "cropperjs/dist/cropper.css"
 
 function App() {
   const [image, setImage] = useState(null)
+  
+  // Transform States
   const [scaleX, setScaleX] = useState(1)
   const [scaleY, setScaleY] = useState(1)
   
-  // New State for Custom Dimensions
+  // Custom Size States
   const [customWidth, setCustomWidth] = useState('')
   const [customHeight, setCustomHeight] = useState('')
-  
+
+  // Export States
+  const [format, setFormat] = useState('image/png')
+  const [quality, setQuality] = useState(0.9)
+
+  // UI State to highlight active tool
+  const [dragMode, setDragModeState] = useState('crop') 
+
   const cropperRef = useRef(null)
 
   const handleFileChange = (e) => {
@@ -30,27 +39,23 @@ function App() {
     const cropper = imageElement?.cropper
 
     if (cropper) {
-      // Configuration for the output image
-      const options = {
-        fillColor: '#fff', // Fills transparency with white (optional)
-      }
-
-      // If user specified dimensions, force the output to be that size
+      const options = { fillColor: '#fff' }
       if (customWidth && customHeight) {
         options.width = parseInt(customWidth)
         options.height = parseInt(customHeight)
       }
 
       const croppedCanvas = cropper.getCroppedCanvas(options)
-      
-      if (!croppedCanvas) {
-        alert("Could not create crop.")
-        return
-      }
+      if (!croppedCanvas) return
 
-      const imageUrl = croppedCanvas.toDataURL('image/png')
+      const imageUrl = croppedCanvas.toDataURL(format, quality)
+      
+      let extension = 'png'
+      if (format === 'image/jpeg') extension = 'jpg'
+      if (format === 'image/webp') extension = 'webp'
+
       const link = document.createElement('a')
-      link.download = 'cropyfier-edit.png'
+      link.download = `cropyfier-edit.${extension}`
       link.href = imageUrl
       link.click()
     }
@@ -58,15 +63,18 @@ function App() {
 
   // --- TOOLS ---
 
-  // When user clicks a Preset (like Square), we clear the custom pixel inputs
-  // because "Square" is a ratio, not a specific pixel size.
+  // New function to toggle between Moving the image and Cropping
+  const setMode = (mode) => {
+    cropperRef.current?.cropper?.setDragMode(mode)
+    setDragModeState(mode)
+  }
+
   const setPresetRatio = (ratio) => {
     setCustomWidth('')
     setCustomHeight('')
     cropperRef.current?.cropper?.setAspectRatio(ratio)
   }
 
-  // When user types in pixels, we enforce that ratio immediately
   const handleCustomSize = (w, h) => {
     setCustomWidth(w)
     setCustomHeight(h)
@@ -97,6 +105,9 @@ function App() {
     setScaleY(1)
     setCustomWidth('')
     setCustomHeight('')
+    setFormat('image/png')
+    setQuality(0.9)
+    setMode('crop') // Default back to crop
   }
 
   return (
@@ -105,7 +116,7 @@ function App() {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
           Cropyfier
         </h1>
-        <div className='text-gray-500 text-sm'>v1.1</div>
+        <div className='text-gray-500 text-sm'>v1.3</div>
       </header>
 
       <main className="w-full max-w-6xl flex flex-col items-center">
@@ -144,69 +155,113 @@ function App() {
                 responsive={true}
                 autoCropArea={1}
                 checkOrientation={false}
+                dragMode={dragMode} // This controls the behavior
               />
             </div>
 
             {/* SIDEBAR CONTROLS */}
             <div className="flex flex-col gap-6 bg-gray-800 p-6 rounded-2xl border border-gray-700 h-fit shadow-xl overflow-y-auto max-h-[800px]">
               
-              {/* 1. Custom Size Inputs (NEW) */}
-              <div className="bg-gray-700/30 p-4 rounded-xl border border-gray-700">
-                 <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3">Output Size (px)</h3>
-                 <div className="flex gap-2 items-center">
-                    <input 
-                      type="number" 
-                      placeholder="Width" 
-                      value={customWidth}
-                      onChange={(e) => handleCustomSize(e.target.value, customHeight)}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <span className="text-gray-500">x</span>
-                    <input 
-                      type="number" 
-                      placeholder="Height" 
-                      value={customHeight}
-                      onChange={(e) => handleCustomSize(customWidth, e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                 </div>
-                 <p className="text-xs text-gray-500 mt-2">Leaving this empty crops at original resolution.</p>
-              </div>
-
-              {/* 2. Aspect Ratios */}
-              <div>
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presets</h3>
+              {/* 1. Interaction Mode (NEW) */}
+              <div className="bg-blue-900/20 border border-blue-800/50 p-3 rounded-xl">
+                <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">Tools</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => setPresetRatio(NaN)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">Free</button>
-                  <button onClick={() => setPresetRatio(1)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">Square (1:1)</button>
-                  <button onClick={() => setPresetRatio(16/9)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">YouTube (16:9)</button>
-                  <button onClick={() => setPresetRatio(4/5)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">Portrait (4:5)</button>
-                  <button onClick={() => setPresetRatio(9/16)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">Story (9:16)</button>
-                  <button onClick={() => setPresetRatio(2/1)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm transition border border-gray-600">Twitter (2:1)</button>
+                  <button 
+                    onClick={() => setMode('move')}
+                    className={`py-2 rounded-lg text-sm transition flex items-center justify-center gap-2 ${
+                      dragMode === 'move' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    <span>✋</span> Move
+                  </button>
+                  <button 
+                    onClick={() => setMode('crop')}
+                    className={`py-2 rounded-lg text-sm transition flex items-center justify-center gap-2 ${
+                      dragMode === 'crop' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    <span>⛶</span> Crop
+                  </button>
                 </div>
               </div>
 
-              {/* 3. Transform Tools */}
+              {/* 2. Output Size */}
+              <div className="bg-gray-700/30 p-4 rounded-xl border border-gray-700">
+                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Output Size (px)</h3>
+                 <div className="flex gap-2 items-center">
+                    <input type="number" placeholder="W" value={customWidth} onChange={(e) => handleCustomSize(e.target.value, customHeight)} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <span className="text-gray-500">x</span>
+                    <input type="number" placeholder="H" value={customHeight} onChange={(e) => handleCustomSize(customWidth, e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                 </div>
+              </div>
+
+              {/* 3. Aspect Ratios */}
+              <div>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presets</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => setPresetRatio(NaN)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">Free</button>
+                  <button onClick={() => setPresetRatio(1)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">1:1</button>
+                  <button onClick={() => setPresetRatio(16/9)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">16:9</button>
+                  <button onClick={() => setPresetRatio(4/5)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">4:5</button>
+                  <button onClick={() => setPresetRatio(9/16)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">9:16</button>
+                  <button onClick={() => setPresetRatio(2/1)} className="bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs transition">2:1</button>
+                </div>
+              </div>
+
+              {/* 4. Transform */}
               <div>
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Transform</h3>
                 <div className="grid grid-cols-4 gap-2">
-                  <button onClick={() => rotate(-90)} title="Rotate Left" className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition border border-gray-600">↺</button>
-                  <button onClick={() => rotate(90)} title="Rotate Right" className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition border border-gray-600">↻</button>
-                  <button onClick={flipHorizontal} title="Flip Horizontal" className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition border border-gray-600">⇄</button>
-                  <button onClick={flipVertical} title="Flip Vertical" className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition border border-gray-600">⇅</button>
+                  <button onClick={() => rotate(-90)} className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition">↺</button>
+                  <button onClick={() => rotate(90)} className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition">↻</button>
+                  <button onClick={flipHorizontal} className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition">⇄</button>
+                  <button onClick={flipVertical} className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xl transition">⇅</button>
                 </div>
-                <button onClick={reset} className="w-full mt-2 text-xs text-gray-400 hover:text-white underline">Reset Transforms</button>
               </div>
 
-              {/* 4. Actions */}
-              <div className="mt-4 flex flex-col gap-3 border-t border-gray-700 pt-6">
+              {/* 5. Export Options */}
+              <div className="bg-gray-700/30 p-4 rounded-xl border border-gray-700">
+                <h3 className="text-xs font-bold text-green-400 uppercase tracking-wider mb-3">Export Settings</h3>
+                <div className="flex gap-1 mb-4 bg-gray-900 p-1 rounded-lg">
+                  {['image/png', 'image/jpeg', 'image/webp'].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFormat(f)}
+                      className={`flex-1 py-1.5 rounded-md text-xs font-medium transition ${
+                        format === f ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      {f.split('/')[1].toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                {format !== 'image/png' && (
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>Quality</span>
+                      <span>{Math.round(quality * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.1"
+                      value={quality}
+                      onChange={(e) => setQuality(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 6. Action Buttons */}
+              <div className="mt-2 flex flex-col gap-3">
                 <button 
                   onClick={getCropData}
                   className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg transform active:scale-95 flex items-center justify-center gap-2"
                 >
                   <span className="text-xl">⬇</span> Download
                 </button>
-                
                 <button 
                   onClick={() => setImage(null)}
                   className="w-full bg-gray-900 hover:bg-red-900/30 text-gray-400 hover:text-red-400 py-3 px-4 rounded-xl transition border border-gray-700"
