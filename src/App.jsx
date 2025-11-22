@@ -2,7 +2,6 @@ import { useState, useRef } from 'react'
 import Cropper from 'react-cropper'
 import "cropperjs/dist/cropper.css"
 
-// Components
 import Header from './components/Header'
 import UploadArea from './components/UploadArea'
 import Sidebar from './components/Sidebar'
@@ -11,19 +10,14 @@ function App() {
   const [image, setImage] = useState(null)
   const cropperRef = useRef(null)
   
+  // Central State for all settings
   const [settings, setSettings] = useState({
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    customWidth: '',
-    customHeight: '',
-    format: 'image/png',
-    quality: 0.9,
-    dragMode: 'crop',
-    isRound: false,
-    brightness: 100,
-    contrast: 100,
-    saturation: 100
+    scaleX: 1, scaleY: 1, rotation: 0,
+    customWidth: '', customHeight: '',
+    format: 'image/png', quality: 0.9,
+    dragMode: 'crop', isRound: false,
+    brightness: 100, contrast: 100, saturation: 100,
+    unit: 'px', dpi: 300
   })
 
   const handleFileChange = (e) => {
@@ -32,12 +26,14 @@ function App() {
       const reader = new FileReader()
       reader.onload = () => {
         setImage(reader.result)
-        setSettings(s => ({ ...s, scaleX: 1, scaleY: 1, rotation: 0, brightness: 100, contrast: 100, saturation: 100, isRound: false }))
+        // Reset defaults
+        setSettings(s => ({ ...s, scaleX: 1, scaleY: 1, rotation: 0, brightness: 100, contrast: 100, saturation: 100, isRound: false, unit: 'px', customWidth: '', customHeight: '' }))
       }
       reader.readAsDataURL(file)
     }
   }
 
+  // The Heavy Lifting: Crop + Filter + Unit Conversion
   const getCropData = () => {
     const cropper = cropperRef.current?.cropper
     if (!cropper) return
@@ -48,25 +44,41 @@ function App() {
       imageSmoothingQuality: 'high',
     }
 
+    // Unit Conversion Logic
     if (settings.customWidth && settings.customHeight) {
-      options.width = parseInt(settings.customWidth)
-      options.height = parseInt(settings.customHeight)
+        let w = parseFloat(settings.customWidth)
+        let h = parseFloat(settings.customHeight)
+        let dpi = settings.dpi || 300
+
+        // Convert everything to Pixels for the canvas
+        if (settings.unit === 'in') {
+            w = w * dpi
+            h = h * dpi
+        } else if (settings.unit === 'cm') {
+            w = (w * dpi) / 2.54
+            h = (h * dpi) / 2.54
+        } else if (settings.unit === 'mm') {
+            w = (w * dpi) / 25.4
+            h = (h * dpi) / 25.4
+        }
+
+        options.width = Math.round(w)
+        options.height = Math.round(h)
     }
 
     const canvas = cropper.getCroppedCanvas(options)
     if (!canvas) return
 
-    // Post-Processing
+    // Post-Processing (Filters)
     const finalCanvas = document.createElement('canvas')
     finalCanvas.width = canvas.width
     finalCanvas.height = canvas.height
     const ctx = finalCanvas.getContext('2d')
 
-    // Apply Filters
     ctx.filter = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%)`
     ctx.drawImage(canvas, 0, 0)
 
-    // Apply Circle Cutout (Actual Data)
+    // Circular Crop
     if (settings.isRound) {
       const tempCanvas = document.createElement('canvas')
       tempCanvas.width = canvas.width
@@ -91,6 +103,7 @@ function App() {
     link.click()
   }
 
+  // Actions passed to Sidebar
   const actions = {
     setMode: (mode) => {
       cropperRef.current?.cropper?.setDragMode(mode)
@@ -110,9 +123,18 @@ function App() {
         cropperRef.current?.cropper?.setAspectRatio(NaN)
       }
     },
-    handleCustomSize: (w, h) => {
-       setSettings(s => ({ ...s, customWidth: w, customHeight: h }))
-       if (w && h) cropperRef.current?.cropper?.setAspectRatio(w / h)
+    handleCustomSize: (val, type) => {
+       let newSettings = { ...settings }
+       if (type === 'w') newSettings.customWidth = val
+       if (type === 'h') newSettings.customHeight = val
+       setSettings(newSettings)
+       // Update ratio if both exist and we are in pixels (conversions are complex to preview live)
+       if (newSettings.unit === 'px' && newSettings.customWidth && newSettings.customHeight) {
+         cropperRef.current?.cropper?.setAspectRatio(newSettings.customWidth / newSettings.customHeight)
+       }
+    },
+    handleUnitChange: (newUnit) => {
+        setSettings(s => ({...s, unit: newUnit}))
     },
     rotate: (deg) => {
       cropperRef.current?.cropper?.rotate(deg)
@@ -136,10 +158,8 @@ function App() {
   }
 
   return (
-    // FIXED LAYOUT: h-screen and overflow-hidden prevents window scrolling
     <div className="h-screen w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
       
-      {/* CSS HACK to make the Cropper Grid visually Round */}
       {settings.isRound && (
         <style>{`
           .cropper-view-box, .cropper-face {
@@ -149,17 +169,16 @@ function App() {
         `}</style>
       )}
 
-      <div className="px-6 pt-2 flex-shrink-0">
-        <Header version="v2.1 Desktop Mode" />
+      <div className="px-6 pt-2 flex-shrink-0 z-20">
+        <Header version="v2.3 Final" />
       </div>
 
-      <main className="flex-1 w-full max-w-[1600px] mx-auto p-4 h-full overflow-hidden">
+      <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 h-full overflow-hidden flex flex-col lg:flex-row gap-6">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
         ) : (
-          <div className="flex flex-col lg:flex-row gap-6 h-full pb-20">
-            
-            {/* Canvas Area - Takes remaining space */}
+          <>
+            {/* Canvas Area (LEFT) */}
             <div className="flex-1 bg-black/20 p-4 rounded-2xl border border-gray-800/50 flex items-center justify-center relative overflow-hidden">
                <div style={{ 
                  filter: `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%)`,
@@ -181,11 +200,11 @@ function App() {
               </div>
             </div>
 
-            {/* Sidebar Area - Fixed width, internal scrolling */}
-            <div className="w-full lg:w-[350px] h-full flex-shrink-0">
+            {/* Sidebar Area (RIGHT) - Fixed Width 420px */}
+            <div className="w-full lg:w-[420px] h-full flex-shrink-0 z-10">
                 <Sidebar settings={settings} setSettings={setSettings} actions={actions} />
             </div>
-          </div>
+          </>
         )}
       </main>
     </div>
