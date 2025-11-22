@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-// We import the raw logic library, not the React component wrapper
 import Cropper from "cropperjs"; 
 import "cropperjs/dist/cropper.css";
 
@@ -24,17 +23,17 @@ function App() {
   const [image, setImage] = useState(null);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   
-  // References to the raw HTML elements
   const imageElementRef = useRef(null);
   const cropperInstanceRef = useRef(null);
+  const isRoundRef = useRef(settings.isRound);
 
-  // 1. Load the File
+  useEffect(() => { isRoundRef.current = settings.isRound; }, [settings.isRound]);
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        // Destroy old cropper if exists
         if (cropperInstanceRef.current) {
           cropperInstanceRef.current.destroy();
           cropperInstanceRef.current = null;
@@ -47,16 +46,13 @@ function App() {
     e.target.value = null;
   };
 
-  // 2. Initialize Cropper MANUALLY when image loads
   useEffect(() => {
     if (image && imageElementRef.current) {
-      // Double check destruction to prevent duplicates
       if (cropperInstanceRef.current) {
         cropperInstanceRef.current.destroy();
       }
 
-      // Initialize raw CropperJS
-      cropperInstanceRef.current = new Cropper(imageElementRef.current, {
+      const cropper = new Cropper(imageElementRef.current, {
         viewMode: 1,
         dragMode: 'move',
         initialAspectRatio: NaN,
@@ -65,11 +61,64 @@ function App() {
         background: false,
         autoCropArea: 0.8,
         responsive: true,
-        checkOrientation: false, // Prevents rotation bugs
+        checkOrientation: false,
       });
+
+      cropperInstanceRef.current = cropper;
+
+      const wrapper = imageElementRef.current.parentElement; 
+
+      // --- STABLE POINTER HANDLER (FIXED) ---
+      const handlePointerDown = (e) => {
+        if (!isRoundRef.current || !cropper) return;
+
+        const target = e.target;
+        const className = target.className || "";
+        
+        // 1. CORNERS: Lock Ratio (Scale)
+        if (
+          className.includes('point-ne') || 
+          className.includes('point-nw') || 
+          className.includes('point-se') || 
+          className.includes('point-sw')
+        ) {
+          const oldData = cropper.getData();
+          const targetRatio = oldData.width / oldData.height;
+          
+          // OPTIMIZATION: Only apply if ratio is significantly different.
+          // This prevents unnecessary re-renders (Jumps) if already locked.
+          const currentRatioSetting = cropper.options.aspectRatio;
+          
+          // If current ratio is NaN or differs from target > 0.001
+          if (isNaN(currentRatioSetting) || Math.abs(currentRatioSetting - targetRatio) > 0.001) {
+             cropper.setAspectRatio(targetRatio);
+             cropper.setData(oldData); // Force restore position
+          }
+        } 
+        
+        // 2. EDGES: Free Ratio (Stretch)
+        else if (
+          className.includes('line-') || 
+          className.includes('point-n') || 
+          className.includes('point-s') || 
+          className.includes('point-e') || 
+          className.includes('point-w')
+        ) {
+          // OPTIMIZATION: If already Free (NaN), DO NOTHING.
+          // This was the cause of the edge jump! We were resetting it constantly.
+          if (!isNaN(cropper.options.aspectRatio)) {
+             const oldData = cropper.getData();
+             cropper.setAspectRatio(NaN);
+             cropper.setData(oldData); // Force restore position
+          }
+        }
+      };
+
+      if (wrapper) {
+        wrapper.addEventListener('pointerdown', handlePointerDown, { capture: true });
+      }
     }
 
-    // Cleanup on unmount
     return () => {
       if (cropperInstanceRef.current) {
         cropperInstanceRef.current.destroy();
@@ -77,8 +126,6 @@ function App() {
       }
     };
   }, [image]);
-
-  // --- ACTIONS ---
 
   const actions = {
     setPresetRatio: (ratio, label) => {
@@ -89,12 +136,25 @@ function App() {
     },
 
     toggleRound: () => {
-      const newState = !settings.isRound;
-      const newRatio = newState ? 1 : NaN;
-      setSettings(s => ({ ...s, isRound: newState, aspectRatio: newRatio, selectedPreset: newState ? "circle" : "free" }));
-      
-      if (cropperInstanceRef.current) {
-        cropperInstanceRef.current.setAspectRatio(newRatio);
+      setSettings(s => ({ 
+        ...s, 
+        isRound: true, 
+        aspectRatio: NaN, 
+        selectedPreset: "circle" 
+      }));
+
+      const cropper = cropperInstanceRef.current;
+      if (cropper) {
+        const imgData = cropper.getImageData();
+        const minSide = Math.min(imgData.naturalWidth, imgData.naturalHeight);
+        const size = minSide * 0.6; 
+        const x = (imgData.naturalWidth - size) / 2;
+        const y = (imgData.naturalHeight - size) / 2;
+
+        cropper.setAspectRatio(NaN);
+        cropper.setData({
+          x: x, y: y, width: size, height: size
+        });
       }
     },
 
@@ -133,7 +193,6 @@ function App() {
         [type === 'w' ? 'customWidth' : 'customHeight']: val,
         selectedPreset: null 
       };
-      
       const cropper = cropperInstanceRef.current;
       if (settings.lockAspectRatio && val !== "" && cropper) {
         const data = cropper.getData();
@@ -163,19 +222,14 @@ function App() {
 
     download: () => {
       const cropper = cropperInstanceRef.current;
-      if (!cropper) {
-        alert("Editor not ready");
-        return;
-      }
+      if (!cropper) return;
 
-      // 1. Setup Output Options
       const options = {
         fillColor: settings.format === "image/jpeg" ? "#fff" : "transparent",
         imageSmoothingEnabled: true,
         imageSmoothingQuality: "high",
       };
 
-      // 2. Handle Units
       if (settings.customWidth || settings.customHeight) {
         let w = parseFloat(settings.customWidth);
         let h = parseFloat(settings.customHeight);
@@ -194,11 +248,9 @@ function App() {
         options.height = Math.round(h);
       }
 
-      // 3. Get Raw Crop
       const rawCanvas = cropper.getCroppedCanvas(options);
       if (!rawCanvas) return;
 
-      // 4. Apply Filters & Circle
       const finalCanvas = document.createElement("canvas");
       finalCanvas.width = rawCanvas.width;
       finalCanvas.height = rawCanvas.height;
@@ -206,16 +258,20 @@ function App() {
 
       if (settings.isRound) {
         ctx.beginPath();
-        ctx.ellipse(finalCanvas.width/2, finalCanvas.height/2, finalCanvas.width/2, finalCanvas.height/2, 0, 0, 2 * Math.PI);
+        ctx.ellipse(
+          finalCanvas.width/2, 
+          finalCanvas.height/2, 
+          finalCanvas.width/2, 
+          finalCanvas.height/2, 
+          0, 0, 2 * Math.PI
+        );
         ctx.closePath();
         ctx.clip();
       }
 
       ctx.filter = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
-      
       ctx.drawImage(rawCanvas, 0, 0);
 
-      // 5. Download
       const link = document.createElement("a");
       link.download = `cropyfier-${Date.now()}.${settings.format.split("/")[1]}`;
       link.href = finalCanvas.toDataURL(settings.format, settings.quality);
@@ -227,10 +283,9 @@ function App() {
 
   return (
     <div className="h-screen h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
-      {/* Round Mode CSS Helper */}
       {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
       
-      <Header version="v6.0 Native" />
+      <Header version="v7.6 Final Stable" />
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {!image ? (
@@ -239,20 +294,9 @@ function App() {
           <>
             <div className="flex-1 bg-[#0B0F19] relative flex items-center justify-center overflow-hidden">
               <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#1f2937 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-              
               <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
-                {/* 
-                   CRITICAL CHANGE:
-                   We are using a RAW IMG tag here, not the <Cropper> component.
-                   We control this <img> with the useEffect hook above.
-                */}
                 <div style={{ filter: filterString, width: '100%', height: '100%' }}>
-                   <img 
-                      ref={imageElementRef} 
-                      src={image} 
-                      alt="Edit Workspace" 
-                      style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} // CropperJS needs display:block
-                   />
+                   <img ref={imageElementRef} src={image} style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} />
                 </div>
               </div>
             </div>
