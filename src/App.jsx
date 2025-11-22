@@ -61,21 +61,20 @@ function App() {
         background: false,
         autoCropArea: 0.8,
         responsive: true,
+        restore: true,
         checkOrientation: false,
+        minContainerWidth: 150,
+        minContainerHeight: 150,
       });
 
       cropperInstanceRef.current = cropper;
 
       const wrapper = imageElementRef.current.parentElement; 
-
-      // --- STABLE POINTER HANDLER (FIXED) ---
       const handlePointerDown = (e) => {
         if (!isRoundRef.current || !cropper) return;
-
         const target = e.target;
         const className = target.className || "";
         
-        // 1. CORNERS: Lock Ratio (Scale)
         if (
           className.includes('point-ne') || 
           className.includes('point-nw') || 
@@ -84,19 +83,13 @@ function App() {
         ) {
           const oldData = cropper.getData();
           const targetRatio = oldData.width / oldData.height;
-          
-          // OPTIMIZATION: Only apply if ratio is significantly different.
-          // This prevents unnecessary re-renders (Jumps) if already locked.
           const currentRatioSetting = cropper.options.aspectRatio;
           
-          // If current ratio is NaN or differs from target > 0.001
           if (isNaN(currentRatioSetting) || Math.abs(currentRatioSetting - targetRatio) > 0.001) {
              cropper.setAspectRatio(targetRatio);
-             cropper.setData(oldData); // Force restore position
+             cropper.setData(oldData); 
           }
         } 
-        
-        // 2. EDGES: Free Ratio (Stretch)
         else if (
           className.includes('line-') || 
           className.includes('point-n') || 
@@ -104,12 +97,10 @@ function App() {
           className.includes('point-e') || 
           className.includes('point-w')
         ) {
-          // OPTIMIZATION: If already Free (NaN), DO NOTHING.
-          // This was the cause of the edge jump! We were resetting it constantly.
           if (!isNaN(cropper.options.aspectRatio)) {
              const oldData = cropper.getData();
              cropper.setAspectRatio(NaN);
-             cropper.setData(oldData); // Force restore position
+             cropper.setData(oldData); 
           }
         }
       };
@@ -285,22 +276,41 @@ function App() {
     <div className="h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
       {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
       
-      <Header version="v7.6 Final Stable" />
+      <Header version="v7.10 Layout Fix" />
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
         ) : (
           <>
-            <div className="flex-1 bg-[#0B0F19] relative flex items-center justify-center overflow-hidden">
-              <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#1f2937 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-              <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
+            {/* 
+              1. IMAGE AREA
+              Mobile: h-[55dvh] (55% of height, increased from 40%)
+              Desktop: flex-1 (Takes all remaining width, pushing Sidebar to the edge)
+            */}
+            <div className="relative h-[55dvh] lg:h-auto lg:flex-1 bg-[#0B0F19] flex items-center justify-center overflow-hidden order-1 lg:order-1 border-b border-gray-800 lg:border-b-0">
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none" 
+                style={{ 
+                  backgroundImage: 'linear-gradient(#374151 1px, transparent 1px), linear-gradient(90deg, #374151 1px, transparent 1px)', 
+                  backgroundSize: '20px 20px' 
+                }}>
+              </div>
+              
+              <div className="relative z-10 w-full h-full p-4">
                 <div style={{ filter: filterString, width: '100%', height: '100%' }}>
                    <img ref={imageElementRef} src={image} style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} />
                 </div>
               </div>
             </div>
-            <Sidebar settings={settings} setSettings={setSettings} actions={actions} />
+
+            {/* 
+              2. SIDEBAR CONTAINER
+              Mobile: flex-1 (Fills the remaining 45% of height)
+              Desktop: lg:flex-none (STOPS growing. It stays fixed width, preventing the "drift left" bug)
+            */}
+            <div className="flex-1 lg:flex-none lg:h-auto order-2 lg:order-2 flex flex-col overflow-hidden bg-gray-900 relative z-20 shadow-2xl">
+               <Sidebar settings={settings} setSettings={setSettings} actions={actions} />
+            </div>
           </>
         )}
       </main>

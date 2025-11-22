@@ -2,16 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #030712; /* gray-950 */
-  color: #fff;
-  overflow: hidden; /* Prevent body scroll, we handle it inside */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #030712;
 }
 
-/* Custom Scrollbar */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
@@ -24,7 +29,6 @@ body {
   background: #4b5563;
 }
 
-/* Custom Range Slider Styling */
 input[type="range"] {
   -webkit-appearance: none;
   width: 100%;
@@ -44,7 +48,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: #3b82f6;
   cursor: pointer;
   -webkit-appearance: none;
-  margin-top: -6px; /* Center thumb */
+  margin-top: -6px;
   box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
   transition: transform 0.1s;
 }
@@ -53,4 +57,50 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 input[type="range"]:focus::-webkit-slider-thumb {
   background: #60a5fa;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* --- CROPPER UI FIXES --- */
+
+/* Hide the transparent dashed background */
+.cropper-modal {
+  opacity: 0.5;
+  background-color: #000;
+}
+
+/* Make handles (dots) much smaller and circular */
+.cropper-point {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: #3b82f6 !important;
+  border-radius: 50% !important;
+  opacity: 1 !important;
+  box-shadow: 0 0 4px rgba(0,0,0,0.5);
+}
+
+/* Corner handles slightly larger for usability */
+.cropper-point.point-ne, 
+.cropper-point.point-nw, 
+.cropper-point.point-se, 
+.cropper-point.point-sw {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* Thin lines */
+.cropper-line {
+  background-color: #3b82f6 !important;
+  width: 1px !important;
+}
+
+/* The box outline */
+.cropper-view-box {
+  outline: 1px solid #3b82f6 !important;
 }

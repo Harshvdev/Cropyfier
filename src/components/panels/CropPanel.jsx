@@ -3,15 +3,15 @@ export default function CropPanel({ settings, actions }) {
     { label: "IG Post", ratio: 1, icon: "📸", desc: "1080 x 1080" },
     { label: "IG Portrait", ratio: 4 / 5, icon: "📸", desc: "1080 x 1350" },
     { label: "IG Story", ratio: 9 / 16, icon: "📱", desc: "1080 x 1920" },
-    { label: "Twitter Header", ratio: 3 / 1, icon: "🐦", desc: "1500 x 500" },
-    { label: "Twitter Post", ratio: 16 / 9, icon: "🐦", desc: "1600 x 900" },
-    { label: "YouTube Cover", ratio: 16 / 9, icon: "▶️", desc: "2560 x 1440" },
-    { label: "Facebook Cover", ratio: 2.63, icon: "👍", desc: "820 x 312" },
-    { label: "LinkedIn Cover", ratio: 4 / 1, icon: "💼", desc: "1584 x 396" },
+    { label: "Twit Header", ratio: 3 / 1, icon: "🐦", desc: "1500 x 500" },
+    { label: "Twit Post", ratio: 16 / 9, icon: "🐦", desc: "1600 x 900" },
+    { label: "YT Cover", ratio: 16 / 9, icon: "▶️", desc: "2560 x 1440" },
+    { label: "FB Cover", ratio: 2.63, icon: "👍", desc: "820 x 312" },
+    { label: "Linked Cover", ratio: 4 / 1, icon: "💼", desc: "1584 x 396" },
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-4">
       
       {/* BASIC RATIOS */}
       <div>
@@ -61,24 +61,24 @@ export default function CropPanel({ settings, actions }) {
       {/* SOCIAL MEDIA */}
       <div>
          <label className="text-[10px] font-bold text-gray-500 uppercase mb-3 block tracking-wider">Social Media Presets</label>
-         <div className="grid grid-cols-2 gap-2">
+         <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
             {socialPresets.map(p => (
               <button 
                 key={p.label}
                 type="button"
                 onClick={() => actions.setPresetRatio(p.ratio, p.label)}
-                className={`flex items-center gap-3 p-3 rounded-xl border transition text-left group active:bg-gray-700 ${
+                className={`flex items-center gap-3 p-2.5 rounded-xl border transition text-left group active:bg-gray-700 ${
                   settings.selectedPreset === p.label && !settings.isRound
                   ? "bg-blue-900/20 border-blue-500"
                   : "bg-gray-800 border-gray-700 hover:bg-gray-750 hover:border-gray-600"
                 }`}
               >
-                 <span className="text-xl opacity-70 grayscale group-hover:grayscale-0 transition">{p.icon}</span>
-                 <div className="flex flex-col overflow-hidden">
+                 <span className="text-lg opacity-70 grayscale group-hover:grayscale-0 transition">{p.icon}</span>
+                 <div className="flex flex-col overflow-hidden min-w-0">
                     <span className={`text-xs font-bold truncate w-full ${settings.selectedPreset === p.label && !settings.isRound ? "text-blue-400" : "text-gray-200"}`}>
                       {p.label}
                     </span>
-                    <span className="text-[9px] text-gray-500 font-mono">{p.desc}</span>
+                    <span className="text-[9px] text-gray-500 font-mono truncate">{p.desc}</span>
                  </div>
               </button>
             ))}
@@ -89,10 +89,10 @@ export default function CropPanel({ settings, actions }) {
       <div>
         <label className="text-[10px] font-bold text-gray-500 uppercase mb-3 block tracking-wider">Geometry</label>
         <div className="grid grid-cols-4 gap-2">
-          <button type="button" onClick={() => actions.rotate(-90)} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white" title="Rotate Left">↺</button>
-          <button type="button" onClick={() => actions.rotate(90)} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white" title="Rotate Right">↻</button>
-          <button type="button" onClick={actions.flipHorizontal} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white" title="Flip Horizontal">⇄</button>
-          <button type="button" onClick={actions.flipVertical} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white" title="Flip Vertical">⇅</button>
+          <button type="button" onClick={() => actions.rotate(-90)} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white flex items-center justify-center" title="Rotate Left"><span className="text-lg">↺</span></button>
+          <button type="button" onClick={() => actions.rotate(90)} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white flex items-center justify-center" title="Rotate Right"><span className="text-lg">↻</span></button>
+          <button type="button" onClick={actions.flipHorizontal} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white flex items-center justify-center" title="Flip Horizontal"><span className="text-lg">⇄</span></button>
+          <button type="button" onClick={actions.flipVertical} className="bg-gray-800 border border-gray-700 hover:bg-gray-700 p-3 rounded-xl text-white flex items-center justify-center" title="Flip Vertical"><span className="text-lg">⇅</span></button>
         </div>
       </div>
     </div>
