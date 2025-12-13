@@ -15,7 +15,54 @@ export default function TunePanel({ settings, setSettings, actions }) {
       <Slider label="Saturation" value={settings.saturation} min={0} max={200} onChange={(v) => update('saturation', v)} unit="%" />
       <Slider label="Blur" value={settings.blur} min={0} max={20} onChange={(v) => update('blur', v)} unit="px" />
 
-      <div>
+      {/* NEW: MAGIC BACKGROUND REMOVER */}
+      <div className="border-t border-gray-800 pt-6">
+         <div className="flex justify-between items-center mb-4">
+            <h3 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+               Magic Eraser <span className="bg-purple-500/20 text-purple-300 px-1.5 rounded text-[8px]">PRO</span>
+            </h3>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={settings.removeColorActive} onChange={() => update('removeColorActive', !settings.removeColorActive)} />
+              <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+            </label>
+         </div>
+
+         {settings.removeColorActive && (
+            <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-xl space-y-4 animate-fade-in">
+               <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                     <label className="text-[9px] font-bold text-purple-300 uppercase block mb-1">Target Color</label>
+                     <div className="flex gap-2">
+                        <input 
+                           type="color" 
+                           value={settings.removeColorHex} 
+                           onChange={(e) => update('removeColorHex', e.target.value)} 
+                           className="h-9 w-12 bg-transparent cursor-pointer rounded overflow-hidden p-0 border-0"
+                        />
+                        <button 
+                           type="button" 
+                           onClick={actions.togglePicker}
+                           className="flex-1 bg-gray-800 hover:bg-gray-700 text-xs font-bold rounded px-3 transition text-gray-300 flex items-center justify-center gap-2 border border-gray-700"
+                        >
+                           <span>🖊️</span> Pick Color
+                        </button>
+                     </div>
+                  </div>
+               </div>
+               
+               <Slider 
+                  label="Tolerance (Similarity)" 
+                  value={settings.removeTolerance} 
+                  min={0} 
+                  max={60} 
+                  onChange={(v) => update('removeTolerance', v)} 
+               />
+               <p className="text-[9px] text-gray-400">Higher tolerance removes more shades similar to the selected color.</p>
+            </div>
+         )}
+      </div>
+
+      <div className="border-t border-gray-800 pt-6">
         <label className="text-[10px] font-bold text-gray-500 uppercase mb-3 block tracking-wider">Filters</label>
         <div className="grid grid-cols-4 gap-2">
           <FilterBtn label="B&W" active={settings.grayscale > 0} onClick={() => update('grayscale', settings.grayscale ? 0 : 100)} color="blue" />

@@ -45,6 +45,22 @@ export default function ResizePanel({ settings, setSettings, actions }) {
           ))}
         </div>
       </div>
+
+      {/* NEW: Scaling Algorithm / Interpolation */}
+      <div className="bg-gray-800/30 p-5 rounded-xl border border-gray-700/50">
+         <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block">Resampling Mode</label>
+         <select 
+            value={settings.interpolation} 
+            onChange={(e) => setSettings(s => ({ ...s, interpolation: e.target.value }))} 
+            className="w-full bg-gray-900 border border-gray-700 text-xs text-white px-3 py-2.5 rounded-lg outline-none focus:border-blue-500"
+         >
+            <option value="high">Smooth (Bilinear) - Default</option>
+            <option value="pixelated">Pixelated (Nearest Neighbor) - Best for Pixel Art</option>
+         </select>
+         <p className="text-[9px] text-gray-500 mt-2 leading-relaxed">
+            Use <strong>Smooth</strong> for photos. Use <strong>Pixelated</strong> if you are scaling up pixel art or screenshots to keep edges sharp.
+         </p>
+      </div>
     </div>
   );
 }
