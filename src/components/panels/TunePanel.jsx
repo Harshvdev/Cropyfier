@@ -15,7 +15,7 @@ export default function TunePanel({ settings, setSettings, actions }) {
       <Slider label="Saturation" value={settings.saturation} min={0} max={200} onChange={(v) => update('saturation', v)} unit="%" />
       <Slider label="Blur" value={settings.blur} min={0} max={20} onChange={(v) => update('blur', v)} unit="px" />
 
-      {/* NEW: MAGIC BACKGROUND REMOVER */}
+      {/* MAGIC ERASER SECTION */}
       <div className="border-t border-gray-800 pt-6">
          <div className="flex justify-between items-center mb-4">
             <h3 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
@@ -29,6 +29,7 @@ export default function TunePanel({ settings, setSettings, actions }) {
 
          {settings.removeColorActive && (
             <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-xl space-y-4 animate-fade-in">
+               
                <div className="flex items-center gap-3">
                   <div className="flex-1">
                      <label className="text-[9px] font-bold text-purple-300 uppercase block mb-1">Target Color</label>
@@ -51,13 +52,25 @@ export default function TunePanel({ settings, setSettings, actions }) {
                </div>
                
                <Slider 
-                  label="Tolerance (Similarity)" 
+                  label="Color Similarity" 
                   value={settings.removeTolerance} 
-                  min={0} 
+                  min={1} 
                   max={60} 
                   onChange={(v) => update('removeTolerance', v)} 
                />
-               <p className="text-[9px] text-gray-400">Higher tolerance removes more shades similar to the selected color.</p>
+               
+               <Slider 
+                  label="Shrink Edges (Pixels)" 
+                  value={settings.removeErosion} 
+                  min={0} 
+                  max={5} 
+                  onChange={(v) => update('removeErosion', v)} 
+                  unit="px"
+               />
+               
+               <p className="text-[9px] text-gray-400">
+                  Select the main background color first. Then increase "Shrink Edges" to 1px to remove white halos.
+               </p>
             </div>
          )}
       </div>
