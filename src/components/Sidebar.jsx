@@ -1,13 +1,13 @@
-import { useState } from "react";
+// src/components/Sidebar.jsx
+import { useState, useEffect } from "react";
 import CropPanel from "./panels/CropPanel";
 import ResizePanel from "./panels/ResizePanel";
 import TunePanel from "./panels/TunePanel";
 import WatermarkPanel from "./panels/WatermarkPanel";
 import ExportPanel from "./panels/ExportPanel";
 
-export default function Sidebar({ settings, setSettings, actions }) {
-  const [activeTab, setActiveTab] = useState("crop");
-
+export default function Sidebar({ settings, setSettings, actions, activeTab, setActiveTab }) {
+  
   const tabs = [
     { 
       id: "crop", 

@@ -35,25 +35,22 @@ const INITIAL_SETTINGS = {
   watermarkSize: 40,
   watermarkOpacity: 0.8,
   watermarkColor: "#ffffff",
-  watermarkPos: "Center", // Can be string or {x:0.5, y:0.5}
+  watermarkPos: "Center", 
 };
 
 function App() {
   const [image, setImage] = useState(null);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
-  const [isPicking, setIsPicking] = useState(false); 
+  const [isPicking, setIsPicking] = useState(false);
+  const [activeTab, setActiveTab] = useState("crop");
   
-  // Reference to the active cropper instance inside Editor
   const cropperRef = useRef(null);
 
-  // --- FILE HANDLING ---
   const loadFile = (file) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
         setImage(reader.result);
-        
-        // Smart Defaults
         let detectedFormat = "image/jpeg";
         if (file.type === "image/png") detectedFormat = "image/png";
         if (file.type === "image/webp") detectedFormat = "image/webp";
@@ -63,31 +60,25 @@ function App() {
             format: detectedFormat,
             quality: file.size < 500000 ? 0.8 : 0.9 
         });
+        setActiveTab("crop");
     };
     reader.readAsDataURL(file);
   };
 
   const handleFileChange = (e) => loadFile(e.target.files[0]);
-  
-  // Drag and Drop Hook
   const isDragging = useDragDrop(loadFile);
 
-  // Paste Support
   useEffect(() => {
     const handlePaste = (e) => {
       const items = e.clipboardData.items;
       for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf("image") !== -1) {
-          loadFile(items[i].getAsFile());
-        }
+        if (items[i].type.indexOf("image") !== -1) loadFile(items[i].getAsFile());
       }
     };
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
 
-
-  // --- SIDEBAR ACTIONS ---
   const actions = {
     registerCropper: (ref) => { cropperRef.current = ref.current; },
     
@@ -101,7 +92,6 @@ function App() {
       const cropper = cropperRef.current;
       if (cropper) {
         cropper.setAspectRatio(NaN);
-        // Force a square selection centered
         const data = cropper.getData();
         const min = Math.min(data.width, data.height);
         cropper.setData({ width: min, height: min, x: data.x, y: data.y });
@@ -138,8 +128,6 @@ function App() {
     
     handleCustomSize: (val, type) => {
       let update = { [type === 'w' ? 'customWidth' : 'customHeight']: val, selectedPreset: null };
-      // Logic for locking aspect ratio is handled in generating canvas usually, 
-      // but UI feedback is good here.
       setSettings(s => ({ ...s, ...update }));
     },
     
@@ -149,7 +137,7 @@ function App() {
       setSettings(s => ({ ...s, brightness: 100, contrast: 100, saturation: 100, grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0 }));
     },
     
-    togglePicker: () => setIsPicking(!isPicking),
+    togglePicker: () => setIsPicking(prev => !prev),
     
     cancel: () => {
       setImage(null);
@@ -161,7 +149,6 @@ function App() {
       if (!canvas) return;
       const link = document.createElement("a");
       let format = settings.format;
-      // Force PNG if removing background, even if JPEG was selected initially
       if (settings.removeColorActive && format === 'image/jpeg') format = 'image/png';
       
       const ext = format.split("/")[1];
@@ -190,14 +177,13 @@ function App() {
     <div className="h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden relative">
       {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
       
-      {/* Drag Overlay */}
       {isDragging && (
           <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
               <div className="text-2xl font-bold text-white animate-bounce">Drop Image to Edit</div>
           </div>
       )}
 
-      <Header version="v9.0 Pro" />
+      <Header version="v9.2 Pro" />
       
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {!image ? (
@@ -211,8 +197,15 @@ function App() {
                 isPicking={isPicking}
                 setIsPicking={setIsPicking}
                 actions={actions}
+                activeTab={activeTab}
             />
-            <Sidebar settings={settings} setSettings={setSettings} actions={actions} />
+            <Sidebar 
+                settings={settings} 
+                setSettings={setSettings} 
+                actions={actions}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+            />
           </>
         )}
       </main>

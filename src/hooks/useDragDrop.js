@@ -1,29 +1,39 @@
 // src/hooks/useDragDrop.js
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function useDragDrop(onFileDrop) {
   const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
 
   useEffect(() => {
-    const handleDragOver = (e) => {
+    const handleDragEnter = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      setIsDragging(true);
+      dragCounter.current += 1;
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+        setIsDragging(true);
+      }
     };
 
     const handleDragLeave = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      // Only set false if leaving the window
-      if (e.clientX === 0 && e.clientY === 0) {
+      dragCounter.current -= 1;
+      if (dragCounter.current === 0) {
         setIsDragging(false);
       }
+    };
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
     };
 
     const handleDrop = (e) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
+      dragCounter.current = 0;
 
       if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const file = e.dataTransfer.files[0];
@@ -35,14 +45,15 @@ export default function useDragDrop(onFileDrop) {
       }
     };
 
-    // Attach to window to allow dropping anywhere
-    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragenter', handleDragEnter);
     window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('dragover', handleDragOver);
     window.addEventListener('drop', handleDrop);
 
     return () => {
-      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragenter', handleDragEnter);
       window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
   }, [onFileDrop]);
