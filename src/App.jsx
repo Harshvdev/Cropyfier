@@ -28,6 +28,13 @@ const INITIAL_SETTINGS = {
   removeColorHex: "#ffffff",
   removeTolerance: 10, 
   removeErosion: 0, 
+
+  // Watermark
+  watermarkText: "",
+  watermarkSize: 40,
+  watermarkOpacity: 0.5,
+  watermarkColor: "#ffffff",
+  watermarkPos: "Center",
 };
 
 function App() {
@@ -44,9 +51,35 @@ function App() {
 
   useEffect(() => { isRoundRef.current = settings.isRound; }, [settings.isRound]);
 
+  // --- PASTE SUPPORT (Ctrl+V) ---
+  useEffect(() => {
+    const handlePaste = (e) => {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          const reader = new FileReader();
+          reader.onload = (event) => {
+             // Reset everything when pasting new image
+             if (cropperInstanceRef.current) {
+                cropperInstanceRef.current.destroy();
+                cropperInstanceRef.current = null;
+             }
+             setImage(event.target.result);
+             setSettings(INITIAL_SETTINGS);
+             setPreviewImage(null);
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    };
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, []);
+
   // --- PREVIEW GENERATOR ---
   useEffect(() => {
-    if (!settings.removeColorActive || !image || isPicking) {
+    if ((!settings.removeColorActive && !settings.watermarkText) || !image || isPicking) {
       setPreviewImage(null);
       return;
     }
@@ -62,11 +95,9 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [
-    settings.removeColorActive, 
-    settings.removeColorHex, 
-    settings.removeTolerance,
-    settings.removeErosion,
+    settings.removeColorActive, settings.removeColorHex, settings.removeTolerance, settings.removeErosion,
     settings.brightness, settings.contrast, settings.hue, settings.saturation,
+    settings.watermarkText, settings.watermarkSize, settings.watermarkOpacity, settings.watermarkPos, settings.watermarkColor,
     isPicking
   ]);
 
@@ -106,13 +137,13 @@ function App() {
         viewMode: 1,
         dragMode: 'move',
         initialAspectRatio: NaN,
-        guides: !settings.removeColorActive, 
+        guides: !settings.removeColorActive && !settings.watermarkText, 
         center: true,
         background: false,
         autoCropArea: 0.8,
         responsive: true,
         checkOrientation: false,
-        autoCrop: !settings.removeColorActive,
+        autoCrop: !settings.removeColorActive && !settings.watermarkText,
       });
 
       cropperInstanceRef.current = cropper;
@@ -173,7 +204,7 @@ function App() {
         cropperInstanceRef.current = null;
       }
     };
-  }, [image, isPicking, settings.removeColorActive]); 
+  }, [image, isPicking, settings.removeColorActive, settings.watermarkText]); 
 
   // Handle cursor
   useEffect(() => {
@@ -334,11 +365,8 @@ function App() {
              }
          }
 
-         // PASS 2: SMART EROSION (Aggressive Halo Removal, Safe Object Protection)
+         // PASS 2: SMART EROSION
          if (settings.removeErosion > 0) {
-            // We increase the safety margin. 
-            // 4.0x threshold means: "Delete this edge pixel unless it is VERY different from background."
-            // This covers dirty whites and grays, but stops at dark colors.
             const protectionThreshold = threshold * 4.0; 
             
             for (let e = 0; e < settings.removeErosion; e++) {
@@ -350,26 +378,20 @@ function App() {
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
                         const idx = (y * width + x);
-                        
-                        // If pixel is visible
                         if (alphaCopy[idx] > 0) {
                             let isEdge = false;
-                            
-                            // Check 4-neighborhood
                             if (y > 0 && alphaCopy[idx - width] === 0) isEdge = true;
                             else if (y < height - 1 && alphaCopy[idx + width] === 0) isEdge = true;
                             else if (x > 0 && alphaCopy[idx - 1] === 0) isEdge = true;
                             else if (x < width - 1 && alphaCopy[idx + 1] === 0) isEdge = true;
                             
                             if (isEdge) {
-                                // Check if this edge pixel is "similar enough" to background to be considered halo
                                 const r = data[idx * 4];
                                 const g = data[idx * 4 + 1];
                                 const b = data[idx * 4 + 2];
                                 const dist = Math.sqrt((r - rT)**2 + (g - gT)**2 + (b - bT)**2);
-
                                 if (dist < protectionThreshold) {
-                                    data[idx * 4 + 3] = 0; // Nuke it
+                                    data[idx * 4 + 3] = 0; 
                                 }
                             }
                         }
@@ -400,6 +422,47 @@ function App() {
         ctx.fillStyle = "black"; 
         ctx.fill();
         ctx.globalCompositeOperation = 'source-over'; 
+      }
+
+      // --- WATERMARKING ---
+      if (settings.watermarkText) {
+         ctx.save();
+         ctx.globalCompositeOperation = 'source-over'; // Draw on top
+         ctx.globalAlpha = settings.watermarkOpacity;
+         ctx.font = `bold ${settings.watermarkSize}px Arial, sans-serif`;
+         ctx.fillStyle = settings.watermarkColor;
+         ctx.textBaseline = 'middle';
+         
+         const text = settings.watermarkText;
+         const textMetrics = ctx.measureText(text);
+         const textWidth = textMetrics.width;
+         const textHeight = settings.watermarkSize; // Approx height
+
+         let wx = 0; 
+         let wy = 0;
+         const pad = 20; // Padding
+
+         // Position Logic
+         const W = finalCanvas.width;
+         const H = finalCanvas.height;
+
+         switch(settings.watermarkPos) {
+           case 'Top-Left': wx = pad; wy = pad + textHeight/2; break;
+           case 'Top': wx = (W - textWidth)/2; wy = pad + textHeight/2; break;
+           case 'Top-Right': wx = W - textWidth - pad; wy = pad + textHeight/2; break;
+           
+           case 'Left': wx = pad; wy = H/2; break;
+           case 'Center': wx = (W - textWidth)/2; wy = H/2; break;
+           case 'Right': wx = W - textWidth - pad; wy = H/2; break;
+           
+           case 'Bottom-Left': wx = pad; wy = H - pad - textHeight/2; break;
+           case 'Bottom': wx = (W - textWidth)/2; wy = H - pad - textHeight/2; break;
+           case 'Bottom-Right': wx = W - textWidth - pad; wy = H - pad - textHeight/2; break;
+           default: wx = (W - textWidth)/2; wy = H/2;
+         }
+
+         ctx.fillText(text, wx, wy);
+         ctx.restore();
       }
       
       return finalCanvas;
@@ -439,10 +502,13 @@ function App() {
   
   const displayFilter = isComparing ? 'none' : filterString;
 
+  // Determine if overlay is active
+  const isPreviewActive = (settings.removeColorActive || settings.watermarkText) && !isPicking;
+
   return (
     <div className="h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden">
       {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
-      <Header version="v8.6 Pro" />
+      <Header version="v8.7 Pro" />
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
@@ -451,7 +517,6 @@ function App() {
             <div className="flex-1 bg-[#0B0F19] relative flex items-center justify-center overflow-hidden">
               <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#1f2937 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
               
-              {/* COMPARE BUTTON OVERLAY */}
               <div className="absolute top-4 right-4 z-50">
                 <button
                   onMouseDown={() => setIsComparing(true)}
@@ -465,7 +530,6 @@ function App() {
                 </button>
               </div>
 
-              {/* STATUS BAR */}
               {isPicking && (
                  <div className="absolute top-0 left-0 w-full bg-blue-600 text-white text-center text-xs font-bold py-2 z-50">
                     Mode Active: Click on the image to select the color to remove.
@@ -476,14 +540,14 @@ function App() {
                 
                 {/* 1. ORIGINAL CROPPER */}
                 <div style={{ 
-                  display: (settings.removeColorActive && !isPicking) ? 'none' : 'block',
+                  display: isPreviewActive ? 'none' : 'block',
                   filter: displayFilter, width: '100%', height: '100%' 
                 }}>
                    <img ref={imageElementRef} src={image} style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} />
                 </div>
 
                 {/* 2. PROCESSED PREVIEW OVERLAY */}
-                {settings.removeColorActive && !isPicking && (
+                {isPreviewActive && (
                   <div className="absolute inset-0 flex items-center justify-center bg-[#0B0F19] z-20">
                      <div className="bg-[url('https://border-radius.com/img/transparent.png')] bg-repeat w-full h-full absolute opacity-20 z-0 pointer-events-none"></div>
                      {previewImage ? (
@@ -499,7 +563,7 @@ function App() {
                         </div>
                      )}
                      <div className="absolute bottom-6 bg-black/80 backdrop-blur text-white px-4 py-2 rounded-full text-xs font-bold border border-gray-700 shadow-xl z-30">
-                        {isComparing ? "Original Image" : "Magic Eraser Preview"}
+                        {isComparing ? "Original Image" : "Preview Mode • Crop Disabled"}
                      </div>
                   </div>
                 )}
