@@ -25,7 +25,7 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
       case "resize": return <ResizePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "tune": return <TunePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "watermark": return <WatermarkPanel settings={settings} setSettings={setSettings} />;
-      case "export": return <ExportPanel settings={settings} setSettings={setSettings} actions={actions} />; // Passed actions here
+      case "export": return <ExportPanel settings={settings} setSettings={setSettings} actions={actions} />;
       default: return null;
     }
   };
@@ -39,32 +39,34 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 flex flex-col items-center gap-1 transition rounded-lg ${
+              className={`flex-1 py-4 flex flex-col items-center gap-1.5 transition rounded-lg ${
                 activeTab === tab.id ? "bg-white/5 text-blue-400" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
               }`}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeTab === tab.id ? 2 : 1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
               </svg>
-              <span className="text-[10px] font-bold uppercase tracking-wider">{tab.label}</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">{tab.label}</span>
             </button>
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
           {renderPanel()}
         </div>
       </div>
 
       {/* --- MOBILE VIEW (Bottom Sheet) --- */}
-      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10 w-full z-30 relative">
+      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10 w-full z-30 relative shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
+        
         {/* Control Panel (Scrollable) */}
-        <div className="bg-[#0B0F19] w-full max-h-[45vh] overflow-y-auto custom-scrollbar p-4 border-b border-white/5">
+        {/* max-h limited to prevent covering the whole screen, flex-grow allows it to fill available space until keyboard pushes it */}
+        <div className="bg-[#0B0F19] w-full max-h-[50vh] overflow-y-auto custom-scrollbar p-5 border-b border-white/5">
              {renderPanel()}
         </div>
 
         {/* Bottom Tabs */}
-        <div className="flex items-center justify-between px-2 py-2 bg-black/40 backdrop-blur-lg safe-area-bottom">
+        <div className="flex items-center justify-between px-2 py-3 bg-[#020617] backdrop-blur-lg safe-area-bottom border-t border-white/5">
           {tabs.map((tab) => (
              <button
                key={tab.id}
@@ -73,12 +75,12 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
                  activeTab === tab.id ? "text-blue-400" : "text-gray-500"
                }`}
              >
-                <div className={`p-1.5 rounded-full ${activeTab === tab.id ? "bg-blue-500/20" : ""}`}>
+                <div className={`p-2 rounded-full ${activeTab === tab.id ? "bg-blue-500/20" : ""}`}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
                   </svg>
                 </div>
-                <span className="text-[9px] font-bold uppercase">{tab.label}</span>
+                <span className="text-[10px] font-bold uppercase mt-0.5">{tab.label}</span>
              </button>
           ))}
         </div>

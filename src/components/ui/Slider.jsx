@@ -6,18 +6,18 @@ export default function Slider({ label, value, min, max, onChange, unit = "", st
   // Smart Display Logic
   let displayValue = value;
   if (unit === "%") displayValue = Math.round(value);
-  else if (unit === "px") displayValue = value.toFixed(0); 
-  else displayValue = value.toFixed(2); // For opacity
+  else if (unit === "px") displayValue = Math.round(value); // Clean display for px
+  else displayValue = value.toFixed(2); 
 
   return (
-    <div className="group">
-      <div className="flex justify-between text-xs text-gray-300 mb-3 font-medium">
+    <div className="group py-1">
+      <div className="flex justify-between text-xs text-gray-300 mb-2 font-medium">
         <span>{label}</span>
-        <span className="font-mono text-blue-400">
+        <span className="font-mono text-blue-400 bg-blue-500/10 px-1.5 rounded">
            {displayValue}{unit}
         </span>
       </div>
-      <div className="relative h-6 flex items-center">
+      <div className="relative h-8 flex items-center">
         <input
           type="range"
           min={min}
@@ -25,7 +25,7 @@ export default function Slider({ label, value, min, max, onChange, unit = "", st
           step={effectiveStep}
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="z-10 opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+          className="z-10 opacity-0 absolute inset-0 w-full h-full cursor-pointer touch-none"
         />
         <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
           <div
@@ -34,8 +34,8 @@ export default function Slider({ label, value, min, max, onChange, unit = "", st
           ></div>
         </div>
         <div
-          className="absolute h-4 w-4 bg-white rounded-full shadow-lg border-2 border-blue-500 pointer-events-none transition-all duration-75"
-          style={{ left: `calc(${percentage}% - 8px)` }}
+          className="absolute h-5 w-5 bg-white rounded-full shadow-lg border-2 border-blue-500 pointer-events-none transition-all duration-75"
+          style={{ left: `calc(${percentage}% - 10px)` }}
         ></div>
       </div>
     </div>

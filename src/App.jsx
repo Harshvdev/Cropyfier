@@ -172,8 +172,8 @@ function App() {
   };
 
   return (
-    // FIX: fixed inset-0 prevents the whole page from being zoomed or scrolled
-    <div className="fixed inset-0 h-[100dvh] w-[100dvw] flex flex-col overflow-hidden bg-[#020617] selection:bg-blue-500/30">
+    // FIX: strict w-screen and h-dvh prevents accidental "zoom out" gestures
+    <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col bg-[#020617] overflow-hidden selection:bg-blue-500/30">
       
       {settings.isRound && (
         <style>{`
@@ -190,16 +190,21 @@ function App() {
           </div>
       )}
 
-      <Header version="v9.2 Pro" hasImage={!!image} onCancel={actions.cancel} />
+      {/* Header receives download action now */}
+      <Header 
+        version="v9.3 Pro" 
+        hasImage={!!image} 
+        onCancel={actions.cancel} 
+        onDownload={actions.download}
+      />
       
-      {/* FIX: min-h-0 is CRITICAL for nested flex scrolling */}
-      <main className="flex-1 min-h-0 flex flex-col lg:flex-row relative w-full">
+      <main className="flex-1 flex flex-col lg:flex-row relative w-full overflow-hidden">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
         ) : (
           <>
-            {/* Editor: min-w-0 prevents flexbox blowout */}
-            <div className="flex-1 min-w-0 min-h-0 relative order-1 lg:order-1 bg-[#020617] flex flex-col">
+            {/* Editor: Added min-h-[30vh] to prevent keyboard from crushing it to 0px on mobile */}
+            <div className="flex-1 relative order-1 lg:order-1 bg-[#020617] flex flex-col min-h-[30vh] lg:min-h-0 basis-auto shrink-1">
                  <Editor 
                     image={image} 
                     settings={settings} 
@@ -211,7 +216,8 @@ function App() {
                 />
             </div>
 
-            <div className="order-2 lg:order-2 flex-shrink-0 z-20">
+            {/* Sidebar: shrink-0 ensures it doesn't get compressed, z-30 keeps it above editor if needed */}
+            <div className="order-2 lg:order-2 flex-shrink-0 z-30">
                 <Sidebar 
                     settings={settings} 
                     setSettings={setSettings} 
