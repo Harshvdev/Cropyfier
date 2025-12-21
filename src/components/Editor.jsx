@@ -25,7 +25,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   }, [actions]);
 
   // --- 1. DIRECT DOM SYNC ---
-  // Syncs the absolute overlay div with the active CropperJS selection box
   const syncOverlayPosition = useCallback(() => {
     const cropper = cropperInstanceRef.current;
     const overlay = overlayRef.current;
@@ -41,19 +40,16 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         
         if (!container || cropBoxData.width === 0) return;
         
-        // Calculate the offset of the cropper container relative to our wrapper
         const wrapperRect = wrapper.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
         
         const offsetX = containerRect.left - wrapperRect.left;
         const offsetY = containerRect.top - wrapperRect.top;
 
-        // Apply geometry
         overlay.style.width = `${cropBoxData.width}px`;
         overlay.style.height = `${cropBoxData.height}px`;
         overlay.style.transform = `translate3d(${cropBoxData.left + offsetX}px, ${cropBoxData.top + offsetY}px, 0)`;
         
-        // Only show if we have a URL and aren't comparing
         overlay.style.display = (previewUrl && !isComparing && !isInteracting) ? 'block' : 'none';
     });
   }, [previewUrl, isComparing, isInteracting]);
@@ -63,21 +59,17 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     const needsPreview = settings.removeColorActive || settings.watermarkText || isPicking;
     
     if (!needsPreview || !image || isInteracting) {
-      // Don't revoke immediately to prevent flashing, just hide via CSS logic
       return;
     }
 
     setIsProcessing(true);
     const genId = ++generationRef.current;
 
-    // Debounce slightly to allow UI to settle
     setTimeout(() => {
        if (genId !== generationRef.current) return;
        const cropper = cropperInstanceRef.current;
        if (!cropper) return;
 
-       // Important: Canvas generation is heavy. 
-       // We only generate what is currently inside the crop box.
        const canvas = generateCanvas(cropper, settings);
        
        if (canvas) {
@@ -101,29 +93,44 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     }, 50); 
   }, [settings, image, isInteracting, isPicking]);
 
-  // Trigger generation on settings change
   useEffect(() => {
     generatePreview();
-  }, [generatePreview]); // generatePreview depends on settings
+  }, [generatePreview]);
 
-  // Also trigger sync when previewUrl changes
   useEffect(() => {
     syncOverlayPosition();
   }, [previewUrl, syncOverlayPosition]);
 
 
-  // --- 3. CROPPER LIFECYCLE ---
+  // --- 3. CROPPER LIFECYCLE (THE FIX IS HERE) ---
   useLayoutEffect(() => {
     if (image && imageElementRef.current) {
       if (cropperInstanceRef.current) cropperInstanceRef.current.destroy();
 
+      console.log("Initializing Cropper with Locked Image settings...");
+
       const cropper = new Cropper(imageElementRef.current, {
-        viewMode: 1, // Restrict crop box to not exceed canvas
-        dragMode: 'move',
+        // --- KEY FIXES START HERE ---
+        viewMode: 1,      // 1 = Restrict crop box to not exceed canvas size
+        dragMode: 'crop', // Default to creating a crop box, NOT moving the image ('move')
+        
+        // 1. DISABLE ZOOMING (Solves the "pinch to make smaller" issue)
+        zoomable: false,
+        zoomOnTouch: false,
+        zoomOnWheel: false,
+
+        // 2. DISABLE MOVING (Solves the "move from left to right" issue)
+        movable: false, 
+        
+        // 3. DISABLE SCALING (Prevents API scaling)
+        scalable: false,
+        
+        // --- KEY FIXES END HERE ---
+
         initialAspectRatio: NaN,
         guides: true,
         center: true,
-        background: false, // We handle background grid manually
+        background: false,
         autoCropArea: 0.8,
         responsive: true,
         restore: false,
@@ -133,27 +140,36 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         toggleDragModeOnDblclick: false,
         
         ready: () => {
+            console.log("Cropper Ready. Image should be locked.");
             syncOverlayPosition();
-            // Initial generation
             generatePreview();
         },
-        crop: () => {
-            // Continually sync position during drag, even if content is hidden
+        crop: (event) => {
+            // Monitor coordinates. If these change but the crop box didn't change, 
+            // it means the canvas moved (which shouldn't happen now).
             syncOverlayPosition();
         },
-        // HIDE PREVIEW during interaction to prevent "sliding image" lag
-        cropstart: () => {
+        cropstart: (event) => {
+            // DEBUG LOG: Tells you exactly what triggered the interaction
+            // 'crop' = dragging a handle
+            // 'move' = dragging the background (DISABLED NOW)
+            // 'zoom' = pinching (DISABLED NOW)
+            console.log("Interaction Started. Action Type:", event.detail.action);
+            
             setIsInteracting(true);
         },
-        // SHOW PREVIEW and REGENERATE when interaction stops
         cropend: () => {
+            console.log("Interaction Ended.");
             setIsInteracting(false);
-            // We need a slight delay to let Cropper update its internal data
             setTimeout(() => {
                 generatePreview();
             }, 10);
         },
-        zoom: syncOverlayPosition,
+        zoom: (event) => {
+            // If this logs, the fixes didn't work. It should NOT log.
+            console.warn("ZOOM DETECTED! Old Ratio:", event.detail.oldRatio, "New Ratio:", event.detail.ratio);
+            syncOverlayPosition();
+        },
       });
 
       cropperInstanceRef.current = cropper;
@@ -166,7 +182,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       document.body.style.cursor = 'default';
     };
-  }, [image]); // Only re-init if image source changes
+  }, [image]); 
 
   // Handle Window Resize
   useEffect(() => {
@@ -181,17 +197,13 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   // --- 4. INTERACTIONS & EVENTS ---
   const isPreviewActive = (settings.removeColorActive || settings.watermarkText) && !isPicking;
 
-  // Manage UI Classes for Hiding/Showing Original
+  // Manage UI Classes and Cursor
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
     const cropper = cropperInstanceRef.current;
     
-    // Logic: Hide original image inside crop box ONLY if:
-    // 1. Preview mode is active
-    // 2. We aren't holding "Compare"
-    // 3. We aren't currently dragging the box (Interacting)
     const shouldHideOriginal = isPreviewActive && !isComparing && !isInteracting;
 
     if (shouldHideOriginal) {
@@ -209,7 +221,19 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         if(cropper) cropper.setDragMode('none');
         targetCursor = 'move';
     } else {
-        if(cropper) cropper.setDragMode(activeTab === 'crop' ? settings.dragMode : 'move');
+        // --- LOGIC UPDATE ---
+        // Even if activeTab is not 'crop', we NEVER want to set 'move' on the canvas itself.
+        // We set 'crop' (draw box) or 'none' (do nothing).
+        // If your settings.dragMode comes from a UI button that explicitly says "Hand/Move",
+        // we ignore it for the background image, but we might allow moving the Crop Box.
+        
+        if (cropper) {
+            // If the user selects "Crop" tab, we allow drawing ('crop').
+            // If they are in "Edit" tab, we usually just want to interact with the existing box.
+            const mode = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crop' : 'none';
+            cropper.setDragMode(mode);
+        }
+        
         targetCursor = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crosshair' : 'default';
     }
     document.body.style.cursor = targetCursor;
@@ -250,11 +274,9 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const mouseXInContainer = clientX - containerRect.left;
         const mouseYInContainer = clientY - containerRect.top;
 
-        // Calculate relative to the Crop Box
         const relativeX = mouseXInContainer - cropBoxData.left;
         const relativeY = mouseYInContainer - cropBoxData.top;
 
-        // Convert to percentage (0-1)
         const percentX = Math.max(0, Math.min(1, relativeX / cropBoxData.width));
         const percentY = Math.max(0, Math.min(1, relativeY / cropBoxData.height));
 
@@ -268,7 +290,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   return (
     <div className="flex-1 bg-[#0B0F19] relative flex items-center justify-center overflow-hidden">
         <style>{`
-            /* CSS GRID PATTERN for Transparency */
             .transparency-grid {
                 background-color: #eee;
                 background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
@@ -285,8 +306,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                                   linear-gradient(45deg, transparent 75%, #333 75%),
                                   linear-gradient(-45deg, transparent 75%, #333 75%);
             }
-
-            /* UI Visibility Helpers */
             .hide-crop-ui .cropper-crop-box,
             .hide-crop-ui .cropper-modal {
                 opacity: 0 !important;
@@ -295,17 +314,14 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             }
             .hide-crop-ui .cropper-view-box { outline: none !important; }
             
-            /* FORCE HIDE ORIGINAL IMAGE IN PREVIEW MODE */
-            /* We hide the image inside the view-box to prevent "Double Image" ghosting */
             .preview-active .cropper-view-box img {
                 opacity: 0 !important;
                 visibility: hidden !important; 
             }
-            /* Hide cropper internal grid lines in preview for cleaner look */
             .preview-active .cropper-point,
             .preview-active .cropper-line,
             .preview-active .cropper-dashed {
-                opacity: 0.3 !important; /* Keep faint for guidance */
+                opacity: 0.3 !important;
             }
         `}</style>
 
@@ -340,7 +356,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             className="relative z-10 w-full h-full flex items-center justify-center p-4"
             onClick={handleCanvasInteraction}
         >
-            {/* 1. ORIGINAL CROPPER */}
             <div style={{ width: '100%', height: '100%', filter: baseFilter }}>
                 <img 
                     ref={imageElementRef} 
@@ -351,7 +366,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 />
             </div>
 
-            {/* 2. PREVIEW OVERLAY */}
             <div 
                 ref={overlayRef}
                 className="absolute z-20 pointer-events-none" 
@@ -363,7 +377,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                     willChange: 'transform, width, height'
                 }} 
             >
-                 {/* Transparency Grid */}
                  {(settings.removeColorActive || settings.format !== 'image/jpeg') && (
                      <div className="absolute inset-0 transparency-grid opacity-50 z-0"></div>
                  )}
@@ -381,7 +394,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 )}
             </div>
             
-            {/* Loading Spinner - centered in the wrapper, but only shown when processing */}
             {isPreviewActive && isProcessing && !isInteracting && (
                  <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                     <div className="bg-black/50 p-2 rounded-full backdrop-blur-sm">
