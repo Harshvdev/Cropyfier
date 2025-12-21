@@ -11,30 +11,22 @@ const INITIAL_SETTINGS = {
   scaleX: 1, scaleY: 1, rotation: 0,
   customWidth: "", customHeight: "", lockAspectRatio: true,
   format: "image/jpeg", quality: 0.9, 
-  dragMode: "move",
+  dragMode: "crop", // Changed default to crop based on previous fixes
   isRound: false, 
   aspectRatio: NaN,
   selectedPreset: "free",
+  cropShape: 'rect', // Added for tracking shape explicitly
   
-  // Color Corrections
   brightness: 100, contrast: 100, saturation: 100,
   grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
   
-  // Advanced Features
-  unit: "px", dpi: 300,
-  interpolation: "high", 
+  unit: "px", dpi: 300, interpolation: "high", 
   
-  // Background Removal
-  removeColorActive: false,
-  removeColorHex: "#ffffff",
-  removeTolerance: 10, 
-  removeErosion: 0, 
+  removeColorActive: false, removeColorHex: "#ffffff",
+  removeTolerance: 10, removeErosion: 0, 
 
-  // Watermark
-  watermarkText: "",
-  watermarkSize: 40,
-  watermarkOpacity: 0.8,
-  watermarkColor: "#ffffff",
+  watermarkText: "", watermarkSize: 40,
+  watermarkOpacity: 0.8, watermarkColor: "#ffffff",
   watermarkPos: "Center", 
 };
 
@@ -83,15 +75,16 @@ function App() {
     registerCropper: (ref) => { cropperRef.current = ref.current; },
     
     setPresetRatio: (ratio, label) => {
-      setSettings(s => ({ ...s, isRound: false, aspectRatio: ratio, selectedPreset: label, customWidth: "", customHeight: "" }));
+      setSettings(s => ({ ...s, isRound: false, cropShape: 'rect', aspectRatio: ratio, selectedPreset: label, customWidth: "", customHeight: "" }));
       if (cropperRef.current) cropperRef.current.setAspectRatio(ratio);
     },
     
     toggleRound: () => {
-      setSettings(s => ({ ...s, isRound: true, aspectRatio: NaN, selectedPreset: "circle" }));
+      setSettings(s => ({ ...s, isRound: true, cropShape: 'round', aspectRatio: NaN, selectedPreset: "circle" }));
       const cropper = cropperRef.current;
       if (cropper) {
         cropper.setAspectRatio(NaN);
+        // Force a reset of the box to squareish to prevent squashed circles
         const data = cropper.getData();
         const min = Math.min(data.width, data.height);
         cropper.setData({ width: min, height: min, x: data.x, y: data.y });
@@ -99,7 +92,7 @@ function App() {
     },
     
     setFree: () => {
-      setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free", isRound: false }));
+      setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free", isRound: false, cropShape: 'rect' }));
       if (cropperRef.current) cropperRef.current.setAspectRatio(NaN);
     },
     
@@ -149,7 +142,8 @@ function App() {
       if (!canvas) return;
       const link = document.createElement("a");
       let format = settings.format;
-      if (settings.removeColorActive && format === 'image/jpeg') format = 'image/png';
+      // Force PNG if transparency is needed
+      if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') format = 'image/png';
       
       const ext = format.split("/")[1];
       link.download = `cropyfier-${Date.now()}.${ext}`;
@@ -174,38 +168,45 @@ function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-screen bg-gray-950 text-white font-sans flex flex-col overflow-hidden relative">
-      {settings.isRound && <style>{`.cropper-view-box, .cropper-face { border-radius: 50% !important; outline: 0 !important; }`}</style>}
+    <div className="h-[100dvh] w-full flex flex-col overflow-hidden relative selection:bg-blue-500/30">
       
+      {/* Drag Overlay */}
       {isDragging && (
-          <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-              <div className="text-2xl font-bold text-white animate-bounce">Drop Image to Edit</div>
+          <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-md flex items-center justify-center pointer-events-none">
+              <div className="text-3xl font-bold text-white animate-bounce drop-shadow-lg">Drop Image to Edit</div>
           </div>
       )}
 
-      <Header version="v9.2 Pro" />
+      <Header version="v9.2 Pro" hasImage={!!image} onCancel={actions.cancel} />
       
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
         ) : (
           <>
-            <Editor 
-                image={image} 
-                settings={settings} 
-                setSettings={setSettings}
-                isPicking={isPicking}
-                setIsPicking={setIsPicking}
-                actions={actions}
-                activeTab={activeTab}
-            />
-            <Sidebar 
-                settings={settings} 
-                setSettings={setSettings} 
-                actions={actions}
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-            />
+            {/* Editor Canvas Area */}
+            <div className="flex-1 relative overflow-hidden order-1 lg:order-1 bg-[#020617] flex flex-col">
+                 <Editor 
+                    image={image} 
+                    settings={settings} 
+                    setSettings={setSettings}
+                    isPicking={isPicking}
+                    setIsPicking={setIsPicking}
+                    actions={actions}
+                    activeTab={activeTab}
+                />
+            </div>
+
+            {/* Sidebar / Bottom Sheet */}
+            <div className="order-2 lg:order-2 z-20">
+                <Sidebar 
+                    settings={settings} 
+                    setSettings={setSettings} 
+                    actions={actions}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                />
+            </div>
           </>
         )}
       </main>
