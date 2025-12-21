@@ -13,8 +13,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
-  
-  // Track if user is currently dragging/resizing to temporarily disable preview for performance
   const [isInteracting, setIsInteracting] = useState(false);
 
   const generationRef = useRef(0);
@@ -48,11 +46,16 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
         overlay.style.width = `${cropBoxData.width}px`;
         overlay.style.height = `${cropBoxData.height}px`;
+        
+        // Use translate3d for GPU acceleration
         overlay.style.transform = `translate3d(${cropBoxData.left + offsetX}px, ${cropBoxData.top + offsetY}px, 0)`;
+        
+        // FIX 2: Apply Rounding to the overlay container if isRound is true
+        overlay.style.borderRadius = settings.isRound ? '50%' : '0';
         
         overlay.style.display = (previewUrl && !isComparing && !isInteracting) ? 'block' : 'none';
     });
-  }, [previewUrl, isComparing, isInteracting]);
+  }, [previewUrl, isComparing, isInteracting, settings.isRound]);
 
   // --- 2. PREVIEW GENERATOR ---
   const generatePreview = useCallback(() => {
@@ -65,6 +68,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     setIsProcessing(true);
     const genId = ++generationRef.current;
 
+    // Debounce to allow UI to settle
     setTimeout(() => {
        if (genId !== generationRef.current) return;
        const cropper = cropperInstanceRef.current;
@@ -102,30 +106,22 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   }, [previewUrl, syncOverlayPosition]);
 
 
-  // --- 3. CROPPER LIFECYCLE (THE FIX IS HERE) ---
+  // --- 3. CROPPER LIFECYCLE ---
   useLayoutEffect(() => {
     if (image && imageElementRef.current) {
       if (cropperInstanceRef.current) cropperInstanceRef.current.destroy();
 
-      console.log("Initializing Cropper with Locked Image settings...");
-
       const cropper = new Cropper(imageElementRef.current, {
-        // --- KEY FIXES START HERE ---
-        viewMode: 1,      // 1 = Restrict crop box to not exceed canvas size
-        dragMode: 'crop', // Default to creating a crop box, NOT moving the image ('move')
+        viewMode: 1, 
+        dragMode: 'crop', // Default to crop box creation
         
-        // 1. DISABLE ZOOMING (Solves the "pinch to make smaller" issue)
+        // --- FIX 1: LOCK THE IMAGE IN PLACE ---
         zoomable: false,
         zoomOnTouch: false,
         zoomOnWheel: false,
-
-        // 2. DISABLE MOVING (Solves the "move from left to right" issue)
-        movable: false, 
-        
-        // 3. DISABLE SCALING (Prevents API scaling)
+        movable: false,   // Prevents background image from moving
         scalable: false,
-        
-        // --- KEY FIXES END HERE ---
+        // --------------------------------------
 
         initialAspectRatio: NaN,
         guides: true,
@@ -140,36 +136,22 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         toggleDragModeOnDblclick: false,
         
         ready: () => {
-            console.log("Cropper Ready. Image should be locked.");
             syncOverlayPosition();
             generatePreview();
         },
-        crop: (event) => {
-            // Monitor coordinates. If these change but the crop box didn't change, 
-            // it means the canvas moved (which shouldn't happen now).
+        crop: () => {
             syncOverlayPosition();
         },
-        cropstart: (event) => {
-            // DEBUG LOG: Tells you exactly what triggered the interaction
-            // 'crop' = dragging a handle
-            // 'move' = dragging the background (DISABLED NOW)
-            // 'zoom' = pinching (DISABLED NOW)
-            console.log("Interaction Started. Action Type:", event.detail.action);
-            
+        cropstart: () => {
             setIsInteracting(true);
         },
         cropend: () => {
-            console.log("Interaction Ended.");
             setIsInteracting(false);
             setTimeout(() => {
                 generatePreview();
             }, 10);
         },
-        zoom: (event) => {
-            // If this logs, the fixes didn't work. It should NOT log.
-            console.warn("ZOOM DETECTED! Old Ratio:", event.detail.oldRatio, "New Ratio:", event.detail.ratio);
-            syncOverlayPosition();
-        },
+        zoom: syncOverlayPosition,
       });
 
       cropperInstanceRef.current = cropper;
@@ -197,11 +179,10 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   // --- 4. INTERACTIONS & EVENTS ---
   const isPreviewActive = (settings.removeColorActive || settings.watermarkText) && !isPicking;
 
-  // Manage UI Classes and Cursor
+  // Manage UI Classes
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-
     const cropper = cropperInstanceRef.current;
     
     const shouldHideOriginal = isPreviewActive && !isComparing && !isInteracting;
@@ -221,19 +202,11 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         if(cropper) cropper.setDragMode('none');
         targetCursor = 'move';
     } else {
-        // --- LOGIC UPDATE ---
-        // Even if activeTab is not 'crop', we NEVER want to set 'move' on the canvas itself.
-        // We set 'crop' (draw box) or 'none' (do nothing).
-        // If your settings.dragMode comes from a UI button that explicitly says "Hand/Move",
-        // we ignore it for the background image, but we might allow moving the Crop Box.
-        
         if (cropper) {
-            // If the user selects "Crop" tab, we allow drawing ('crop').
-            // If they are in "Edit" tab, we usually just want to interact with the existing box.
+            // Never allow 'move' on the canvas background itself
             const mode = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crop' : 'none';
             cropper.setDragMode(mode);
         }
-        
         targetCursor = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crosshair' : 'default';
     }
     document.body.style.cursor = targetCursor;
@@ -253,7 +226,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
               setIsPicking(false);
            }).catch(() => { setIsPicking(false); });
         } else {
-           alert("Your browser does not support the EyeDropper API. Use Chrome or Edge, or enter Hex manually.");
+           alert("Use Chrome or Edge for Color Picker.");
            setIsPicking(false);
         }
         return;
@@ -314,10 +287,12 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             }
             .hide-crop-ui .cropper-view-box { outline: none !important; }
             
+            /* Only hide image inside view-box */
             .preview-active .cropper-view-box img {
                 opacity: 0 !important;
                 visibility: hidden !important; 
             }
+            /* Make internal grid lines faint in preview */
             .preview-active .cropper-point,
             .preview-active .cropper-line,
             .preview-active .cropper-dashed {
@@ -366,6 +341,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 />
             </div>
 
+            {/* --- PREVIEW OVERLAY --- */}
             <div 
                 ref={overlayRef}
                 className="absolute z-20 pointer-events-none" 
@@ -374,11 +350,17 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                     top: 0, 
                     left: 0, 
                     display: 'none', 
-                    willChange: 'transform, width, height'
+                    willChange: 'transform, width, height',
+                    // FIX 2: Curve container if Round Mode is active
+                    borderRadius: settings.isRound ? '50%' : '0' 
                 }} 
             >
                  {(settings.removeColorActive || settings.format !== 'image/jpeg') && (
-                     <div className="absolute inset-0 transparency-grid opacity-50 z-0"></div>
+                     <div 
+                        className="absolute inset-0 transparency-grid opacity-50 z-0"
+                        // FIX 2: Curve grid if Round Mode is active
+                        style={{ borderRadius: settings.isRound ? '50%' : '0' }}
+                    ></div>
                  )}
 
                 {previewUrl && !isComparing && !isInteracting && (
@@ -387,7 +369,9 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                         className="w-full h-full relative z-10 shadow-lg" 
                         style={{ 
                             objectFit: 'fill', 
-                            imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto'
+                            imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
+                            // FIX 2: Curve image if Round Mode is active
+                            borderRadius: settings.isRound ? '50%' : '0' 
                         }}
                         alt="Preview"
                     />
