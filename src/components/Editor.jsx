@@ -33,6 +33,9 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     rafRef.current = requestAnimationFrame(() => {
+        // Safety check: if cropper was destroyed mid-frame
+        if (!cropper.cropper) return;
+
         const cropBoxData = cropper.getCropBoxData();
         const container = wrapper.querySelector('.cropper-container');
         
@@ -160,31 +163,37 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     };
   }, [image]); 
 
-  // --- NEW: RESIZE OBSERVER ---
-  // If the wrapper size changes (e.g. bottom sheet opens on mobile), 
-  // tell Cropper to resize immediately.
+  // --- NEW: RESIZE OBSERVER (FIXED FOR CRASH) ---
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || !cropperInstanceRef.current) return;
+    if (!wrapper) return;
 
     const resizeObserver = new ResizeObserver(() => {
-        if (cropperInstanceRef.current) {
-            cropperInstanceRef.current.resize();
-            syncOverlayPosition();
+        // Safety Check 1: Is wrapper still in DOM?
+        if (!wrapper.isConnected) return;
+
+        // Safety Check 2: Does cropper instance exist?
+        const cropper = cropperInstanceRef.current;
+        if (cropper) {
+            // Safety Check 3: Does cropper have a valid container?
+            // CropperJS throws "undefined reading offsetWidth" if container is missing
+            const container = wrapper.querySelector('.cropper-container');
+            if (container) {
+                // Wrap in requestAnimationFrame to avoid ResizeObserver loop limit exceeded
+                requestAnimationFrame(() => {
+                    try {
+                        cropper.resize();
+                        syncOverlayPosition();
+                    } catch (e) {
+                        // Silent catch if cropper is destroyed mid-resize
+                    }
+                });
+            }
         }
     });
 
     resizeObserver.observe(wrapper);
     return () => resizeObserver.disconnect();
-  }, [syncOverlayPosition]);
-
-  // Handle Window Resize (Backup)
-  useEffect(() => {
-      const handleResize = () => {
-          if (cropperInstanceRef.current) syncOverlayPosition();
-      };
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
   }, [syncOverlayPosition]);
 
 

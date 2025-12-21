@@ -57,16 +57,17 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
       </div>
 
       {/* --- MOBILE VIEW (Bottom Sheet) --- */}
-      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10 w-full z-30 relative shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
+      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10 w-full z-30 relative shadow-[0_-5px_20px_rgba(0,0,0,0.5)] flex-shrink-0">
         
         {/* Control Panel (Scrollable) */}
-        {/* max-h limited to prevent covering the whole screen, flex-grow allows it to fill available space until keyboard pushes it */}
-        <div className="bg-[#0B0F19] w-full max-h-[50vh] overflow-y-auto custom-scrollbar p-5 border-b border-white/5">
+        {/* Reduced max-h to 35vh to GUARANTEE tabs are visible even on small screens */}
+        <div className="bg-[#0B0F19] w-full max-h-[35vh] overflow-y-auto custom-scrollbar p-5 border-b border-white/5">
              {renderPanel()}
         </div>
 
         {/* Bottom Tabs */}
-        <div className="flex items-center justify-between px-2 py-3 bg-[#020617] backdrop-blur-lg safe-area-bottom border-t border-white/5">
+        {/* flex-none ensures this container never shrinks */}
+        <div className="flex-none flex items-center justify-between px-2 py-3 bg-[#020617] backdrop-blur-lg safe-area-bottom border-t border-white/5">
           {tabs.map((tab) => (
              <button
                key={tab.id}
