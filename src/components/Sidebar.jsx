@@ -8,7 +8,7 @@ import ExportPanel from "./panels/ExportPanel";
 
 export default function Sidebar({ settings, setSettings, actions, activeTab, setActiveTab }) {
   
-  // Mobile: Toggle panel visibility (optional, but good for pure viewing)
+  // Mobile panel state
   const [isPanelOpen, setIsPanelOpen] = useState(true);
 
   const tabs = [
@@ -25,16 +25,15 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
       case "resize": return <ResizePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "tune": return <TunePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "watermark": return <WatermarkPanel settings={settings} setSettings={setSettings} />;
-      case "export": return <ExportPanel settings={settings} setSettings={setSettings} />;
+      case "export": return <ExportPanel settings={settings} setSettings={setSettings} actions={actions} />; // Passed actions here
       default: return null;
     }
   };
 
   return (
     <>
-      {/* --- DESKTOP VIEW (Large Screens) --- */}
-      <div className="hidden lg:flex flex-col h-full w-[360px] bg-[#0B0F19]/95 backdrop-blur-xl border-l border-white/5 shadow-2xl">
-        {/* Tab Navigation (Desktop) */}
+      {/* --- DESKTOP VIEW (Right Side) --- */}
+      <div className="hidden lg:flex flex-col h-full w-[360px] bg-[#0B0F19]/95 backdrop-blur-xl border-l border-white/5 shadow-2xl z-30">
         <div className="flex border-b border-white/5 bg-black/20 p-1">
           {tabs.map((tab) => (
             <button
@@ -52,39 +51,20 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
           ))}
         </div>
 
-        {/* Panel Content (Desktop) */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4 relative">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4">
           {renderPanel()}
-        </div>
-
-        {/* Desktop Footer Actions */}
-        <div className="p-5 border-t border-white/5 bg-black/20">
-           <div className="flex gap-2">
-              <button 
-                onClick={actions.download}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 transition active:scale-[0.98] flex items-center justify-center gap-2"
-              >
-                 <span>Export Image</span>
-              </button>
-              <button onClick={actions.copyToClipboard} className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl border border-white/5 transition" title="Copy">
-                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-              </button>
-           </div>
         </div>
       </div>
 
-
-      {/* --- MOBILE VIEW (Small Screens) --- */}
-      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10">
-        
-        {/* 1. Control Panel (Slides up above tabs) */}
-        {/* We use a max-height to ensure the image is still visible above */}
-        <div className="bg-[#0B0F19] w-full max-h-[40vh] overflow-y-auto custom-scrollbar p-4 border-b border-white/5">
+      {/* --- MOBILE VIEW (Bottom Sheet) --- */}
+      <div className="lg:hidden flex flex-col bg-[#0B0F19] border-t border-white/10 w-full z-30 relative">
+        {/* Control Panel (Scrollable) */}
+        <div className="bg-[#0B0F19] w-full max-h-[45vh] overflow-y-auto custom-scrollbar p-4 border-b border-white/5">
              {renderPanel()}
         </div>
 
-        {/* 2. Bottom Navigation Tabs */}
-        <div className="flex items-center justify-between px-2 py-2 bg-black/40 backdrop-blur-lg">
+        {/* Bottom Tabs */}
+        <div className="flex items-center justify-between px-2 py-2 bg-black/40 backdrop-blur-lg safe-area-bottom">
           {tabs.map((tab) => (
              <button
                key={tab.id}

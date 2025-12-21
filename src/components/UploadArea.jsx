@@ -1,14 +1,14 @@
 export default function UploadArea({ onFileChange }) {
   return (
-    <div className="flex-1 flex items-center justify-center p-6 bg-[#020617] relative overflow-hidden">
+    <div className="flex-1 flex items-center justify-center p-6 bg-[#020617] relative overflow-hidden h-full w-full">
       
-      {/* Decorative blurred blobs */}
       <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-600/20 rounded-full blur-[100px] pointer-events-none"></div>
 
       <div className="w-full max-w-md relative z-10">
         <div className="relative group cursor-pointer">
-          <label className="block w-full aspect-[4/3] border-2 border-dashed border-gray-700 hover:border-blue-500 rounded-3xl bg-gray-900/50 backdrop-blur-sm transition-all duration-300 flex flex-col items-center justify-center gap-4 hover:bg-gray-800/50 group-hover:scale-[1.01] shadow-2xl">
+          {/* FIX: Removed 'block', kept 'flex' */}
+          <label className="w-full aspect-[4/3] border-2 border-dashed border-gray-700 hover:border-blue-500 rounded-3xl bg-gray-900/50 backdrop-blur-sm transition-all duration-300 flex flex-col items-center justify-center gap-4 hover:bg-gray-800/50 group-hover:scale-[1.01] shadow-2xl">
             
             <div className="p-4 bg-gray-800 rounded-2xl shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
                 <svg className="w-8 h-8 text-gray-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

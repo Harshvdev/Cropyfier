@@ -46,11 +46,8 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
         overlay.style.width = `${cropBoxData.width}px`;
         overlay.style.height = `${cropBoxData.height}px`;
-        
-        // Use translate3d for GPU acceleration
         overlay.style.transform = `translate3d(${cropBoxData.left + offsetX}px, ${cropBoxData.top + offsetY}px, 0)`;
         
-        // FIX 2: Apply Rounding to the overlay container if isRound is true
         overlay.style.borderRadius = settings.isRound ? '50%' : '0';
         
         overlay.style.display = (previewUrl && !isComparing && !isInteracting) ? 'block' : 'none';
@@ -68,7 +65,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     setIsProcessing(true);
     const genId = ++generationRef.current;
 
-    // Debounce to allow UI to settle
     setTimeout(() => {
        if (genId !== generationRef.current) return;
        const cropper = cropperInstanceRef.current;
@@ -113,15 +109,13 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
       const cropper = new Cropper(imageElementRef.current, {
         viewMode: 1, 
-        dragMode: 'crop', // Default to crop box creation
+        dragMode: 'crop', 
         
-        // --- FIX 1: LOCK THE IMAGE IN PLACE ---
         zoomable: false,
         zoomOnTouch: false,
         zoomOnWheel: false,
-        movable: false,   // Prevents background image from moving
+        movable: false, 
         scalable: false,
-        // --------------------------------------
 
         initialAspectRatio: NaN,
         guides: true,
@@ -166,7 +160,25 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     };
   }, [image]); 
 
-  // Handle Window Resize
+  // --- NEW: RESIZE OBSERVER ---
+  // If the wrapper size changes (e.g. bottom sheet opens on mobile), 
+  // tell Cropper to resize immediately.
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper || !cropperInstanceRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+        if (cropperInstanceRef.current) {
+            cropperInstanceRef.current.resize();
+            syncOverlayPosition();
+        }
+    });
+
+    resizeObserver.observe(wrapper);
+    return () => resizeObserver.disconnect();
+  }, [syncOverlayPosition]);
+
+  // Handle Window Resize (Backup)
   useEffect(() => {
       const handleResize = () => {
           if (cropperInstanceRef.current) syncOverlayPosition();
@@ -179,7 +191,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
   // --- 4. INTERACTIONS & EVENTS ---
   const isPreviewActive = (settings.removeColorActive || settings.watermarkText) && !isPicking;
 
-  // Manage UI Classes
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -193,7 +204,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         wrapper.classList.remove('preview-active');
     }
 
-    // Cursor Logic
     let targetCursor = 'default';
     if (isPicking) {
         if(cropper) cropper.setDragMode('none');
@@ -203,7 +213,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         targetCursor = 'move';
     } else {
         if (cropper) {
-            // Never allow 'move' on the canvas background itself
             const mode = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crop' : 'none';
             cropper.setDragMode(mode);
         }
@@ -216,8 +225,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
   const handleCanvasInteraction = (e) => {
     if (!cropperInstanceRef.current) return;
-
-    // A. Color Picker
+    // ... (rest of interaction logic remains same)
     if (isPicking) {
         if (window.EyeDropper) {
            const eyeDropper = new EyeDropper();
@@ -231,28 +239,20 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         }
         return;
     }
-
-    // B. Manual Watermark Placement
     if (settings.watermarkText && typeof settings.watermarkPos === 'object') {
         const cropper = cropperInstanceRef.current;
         const cropBoxData = cropper.getCropBoxData();
-        
         const clientX = e.clientX || (e.touches && e.touches[0].clientX);
         const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-
         const container = wrapperRef.current.querySelector('.cropper-container');
         if(!container) return;
         const containerRect = container.getBoundingClientRect();
-        
         const mouseXInContainer = clientX - containerRect.left;
         const mouseYInContainer = clientY - containerRect.top;
-
         const relativeX = mouseXInContainer - cropBoxData.left;
         const relativeY = mouseYInContainer - cropBoxData.top;
-
         const percentX = Math.max(0, Math.min(1, relativeX / cropBoxData.width));
         const percentY = Math.max(0, Math.min(1, relativeY / cropBoxData.height));
-
         setSettings(s => ({ ...s, watermarkPos: { x: percentX, y: percentY } }));
     }
   };
@@ -261,7 +261,11 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 
   return (
-    <div className="flex-1 bg-[#0B0F19] relative flex items-center justify-center overflow-hidden">
+    <div 
+        ref={wrapperRef}
+        className="w-full h-full flex items-center justify-center p-4 relative overflow-hidden bg-[#0B0F19]"
+    >
+        {/* ... (styles remain the same) */}
         <style>{`
             .transparency-grid {
                 background-color: #eee;
@@ -287,12 +291,10 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             }
             .hide-crop-ui .cropper-view-box { outline: none !important; }
             
-            /* Only hide image inside view-box */
             .preview-active .cropper-view-box img {
                 opacity: 0 !important;
                 visibility: hidden !important; 
             }
-            /* Make internal grid lines faint in preview */
             .preview-active .cropper-point,
             .preview-active .cropper-line,
             .preview-active .cropper-dashed {
@@ -326,66 +328,57 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
              </div>
         )}
 
+        {/* CROPPER CANVAS */}
+        <div style={{ width: '100%', height: '100%', filter: baseFilter }}>
+            <img 
+                ref={imageElementRef} 
+                src={image} 
+                crossOrigin="anonymous" 
+                style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} 
+                alt="Target" 
+            />
+        </div>
+
         <div 
-            ref={wrapperRef}
-            className="relative z-10 w-full h-full flex items-center justify-center p-4"
-            onClick={handleCanvasInteraction}
+            ref={overlayRef}
+            className="absolute z-20 pointer-events-none" 
+            style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                display: 'none', 
+                willChange: 'transform, width, height',
+                borderRadius: settings.isRound ? '50%' : '0' 
+            }} 
         >
-            <div style={{ width: '100%', height: '100%', filter: baseFilter }}>
-                <img 
-                    ref={imageElementRef} 
-                    src={image} 
-                    crossOrigin="anonymous" 
-                    style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} 
-                    alt="Target" 
-                />
-            </div>
-
-            {/* --- PREVIEW OVERLAY --- */}
-            <div 
-                ref={overlayRef}
-                className="absolute z-20 pointer-events-none" 
-                style={{ 
-                    position: 'absolute', 
-                    top: 0, 
-                    left: 0, 
-                    display: 'none', 
-                    willChange: 'transform, width, height',
-                    // FIX 2: Curve container if Round Mode is active
-                    borderRadius: settings.isRound ? '50%' : '0' 
-                }} 
-            >
-                 {(settings.removeColorActive || settings.format !== 'image/jpeg') && (
-                     <div 
-                        className="absolute inset-0 transparency-grid opacity-50 z-0"
-                        // FIX 2: Curve grid if Round Mode is active
-                        style={{ borderRadius: settings.isRound ? '50%' : '0' }}
-                    ></div>
-                 )}
-
-                {previewUrl && !isComparing && !isInteracting && (
-                    <img 
-                        src={previewUrl} 
-                        className="w-full h-full relative z-10 shadow-lg" 
-                        style={{ 
-                            objectFit: 'fill', 
-                            imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
-                            // FIX 2: Curve image if Round Mode is active
-                            borderRadius: settings.isRound ? '50%' : '0' 
-                        }}
-                        alt="Preview"
-                    />
+                {(settings.removeColorActive || settings.format !== 'image/jpeg') && (
+                    <div 
+                    className="absolute inset-0 transparency-grid opacity-50 z-0"
+                    style={{ borderRadius: settings.isRound ? '50%' : '0' }}
+                ></div>
                 )}
-            </div>
-            
-            {isPreviewActive && isProcessing && !isInteracting && (
-                 <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                    <div className="bg-black/50 p-2 rounded-full backdrop-blur-sm">
-                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                 </div>
+
+            {previewUrl && !isComparing && !isInteracting && (
+                <img 
+                    src={previewUrl} 
+                    className="w-full h-full relative z-10 shadow-lg" 
+                    style={{ 
+                        objectFit: 'fill', 
+                        imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
+                        borderRadius: settings.isRound ? '50%' : '0' 
+                    }}
+                    alt="Preview"
+                />
             )}
         </div>
+        
+        {isPreviewActive && isProcessing && !isInteracting && (
+                <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+                <div className="bg-black/50 p-2 rounded-full backdrop-blur-sm">
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                </div>
+                </div>
+        )}
     </div>
   );
 }

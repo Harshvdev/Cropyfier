@@ -11,11 +11,10 @@ const INITIAL_SETTINGS = {
   scaleX: 1, scaleY: 1, rotation: 0,
   customWidth: "", customHeight: "", lockAspectRatio: true,
   format: "image/jpeg", quality: 0.9, 
-  dragMode: "crop", // Changed default to crop based on previous fixes
+  dragMode: "crop",
   isRound: false, 
   aspectRatio: NaN,
   selectedPreset: "free",
-  cropShape: 'rect', // Added for tracking shape explicitly
   
   brightness: 100, contrast: 100, saturation: 100,
   grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
@@ -75,24 +74,30 @@ function App() {
     registerCropper: (ref) => { cropperRef.current = ref.current; },
     
     setPresetRatio: (ratio, label) => {
-      setSettings(s => ({ ...s, isRound: false, cropShape: 'rect', aspectRatio: ratio, selectedPreset: label, customWidth: "", customHeight: "" }));
+      const shouldResetRound = label === "Square"; 
+      setSettings(s => ({ 
+          ...s, 
+          isRound: shouldResetRound ? false : s.isRound, 
+          aspectRatio: ratio, 
+          selectedPreset: label, 
+          customWidth: "", 
+          customHeight: "" 
+      }));
       if (cropperRef.current) cropperRef.current.setAspectRatio(ratio);
     },
     
     toggleRound: () => {
-      setSettings(s => ({ ...s, isRound: true, cropShape: 'round', aspectRatio: NaN, selectedPreset: "circle" }));
+      setSettings(s => ({ ...s, isRound: true, aspectRatio: 1, selectedPreset: "circle" }));
       const cropper = cropperRef.current;
       if (cropper) {
-        cropper.setAspectRatio(NaN);
-        // Force a reset of the box to squareish to prevent squashed circles
+        cropper.setAspectRatio(1);
         const data = cropper.getData();
-        const min = Math.min(data.width, data.height);
-        cropper.setData({ width: min, height: min, x: data.x, y: data.y });
+        cropper.setData({ ...data });
       }
     },
     
     setFree: () => {
-      setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free", isRound: false, cropShape: 'rect' }));
+      setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free" }));
       if (cropperRef.current) cropperRef.current.setAspectRatio(NaN);
     },
     
@@ -142,7 +147,6 @@ function App() {
       if (!canvas) return;
       const link = document.createElement("a");
       let format = settings.format;
-      // Force PNG if transparency is needed
       if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') format = 'image/png';
       
       const ext = format.split("/")[1];
@@ -168,9 +172,18 @@ function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col overflow-hidden relative selection:bg-blue-500/30">
+    // FIX: fixed inset-0 prevents the whole page from being zoomed or scrolled
+    <div className="fixed inset-0 h-[100dvh] w-[100dvw] flex flex-col overflow-hidden bg-[#020617] selection:bg-blue-500/30">
       
-      {/* Drag Overlay */}
+      {settings.isRound && (
+        <style>{`
+            .cropper-view-box, .cropper-face { 
+                border-radius: 50% !important; 
+                outline: 0 !important; 
+            }
+        `}</style>
+      )}
+
       {isDragging && (
           <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-md flex items-center justify-center pointer-events-none">
               <div className="text-3xl font-bold text-white animate-bounce drop-shadow-lg">Drop Image to Edit</div>
@@ -179,13 +192,14 @@ function App() {
 
       <Header version="v9.2 Pro" hasImage={!!image} onCancel={actions.cancel} />
       
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+      {/* FIX: min-h-0 is CRITICAL for nested flex scrolling */}
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row relative w-full">
         {!image ? (
           <UploadArea onFileChange={handleFileChange} />
         ) : (
           <>
-            {/* Editor Canvas Area */}
-            <div className="flex-1 relative overflow-hidden order-1 lg:order-1 bg-[#020617] flex flex-col">
+            {/* Editor: min-w-0 prevents flexbox blowout */}
+            <div className="flex-1 min-w-0 min-h-0 relative order-1 lg:order-1 bg-[#020617] flex flex-col">
                  <Editor 
                     image={image} 
                     settings={settings} 
@@ -197,8 +211,7 @@ function App() {
                 />
             </div>
 
-            {/* Sidebar / Bottom Sheet */}
-            <div className="order-2 lg:order-2 z-20">
+            <div className="order-2 lg:order-2 flex-shrink-0 z-20">
                 <Sidebar 
                     settings={settings} 
                     setSettings={setSettings} 
