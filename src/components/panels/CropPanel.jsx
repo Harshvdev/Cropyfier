@@ -40,17 +40,21 @@ export default function CropPanel({ settings, actions }) {
       <div>
         <label className="text-xs font-bold text-gray-500 uppercase mb-3 block tracking-wide">Standard</label>
         <div className="grid grid-cols-3 gap-3">
-            {/* Free */}
+            {/* Free / View Toggle */}
             <button
                 onClick={actions.setFree}
                 className={`h-14 rounded-xl text-xs font-bold transition border flex flex-col items-center justify-center gap-1 ${
                     settings.selectedPreset === "free"
                     ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20"
-                    : "bg-gray-800/50 border-gray-700/50 text-gray-400 hover:bg-gray-800"
+                    : settings.selectedPreset === "view"
+                      ? "bg-green-600/20 border-green-500 text-green-400" 
+                      : "bg-gray-800/50 border-gray-700/50 text-gray-400 hover:bg-gray-800"
                 }`}
             >
-                <span className="opacity-70 text-sm">📐</span>
-                <span>Free</span>
+                <span className="opacity-70 text-sm">
+                    {settings.selectedPreset === "view" ? "👁️" : "📐"}
+                </span>
+                <span>{settings.selectedPreset === "view" ? "View Only" : "Free"}</span>
             </button>
 
             {/* Square */}

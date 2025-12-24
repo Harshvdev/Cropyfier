@@ -8,22 +8,25 @@ import useDragDrop from "./hooks/useDragDrop";
 import { generateCanvas } from "./utils/canvasUtils";
 
 const INITIAL_SETTINGS = {
+  // Geometry
   scaleX: 1, scaleY: 1, rotation: 0,
   customWidth: "", customHeight: "", lockAspectRatio: true,
+  isRound: false, aspectRatio: NaN, selectedPreset: "free",
+  
+  // Format
   format: "image/jpeg", quality: 0.9, 
   dragMode: "crop",
-  isRound: false, 
-  aspectRatio: NaN,
-  selectedPreset: "free",
+  unit: "px", dpi: 300, interpolation: "high", 
   
+  // Filters
   brightness: 100, contrast: 100, saturation: 100,
   grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
   
-  unit: "px", dpi: 300, interpolation: "high", 
-  
+  // Magic Eraser
   removeColorActive: false, removeColorHex: "#ffffff",
   removeTolerance: 10, removeErosion: 0, 
 
+  // Watermark
   watermarkText: "", watermarkSize: 40,
   watermarkOpacity: 0.8, watermarkColor: "#ffffff",
   watermarkPos: "Center", 
@@ -37,6 +40,7 @@ function App() {
   
   const cropperRef = useRef(null);
 
+  // File Loading Logic
   const loadFile = (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -59,6 +63,7 @@ function App() {
   const handleFileChange = (e) => loadFile(e.target.files[0]);
   const isDragging = useDragDrop(loadFile);
 
+  // Paste Support
   useEffect(() => {
     const handlePaste = (e) => {
       const items = e.clipboardData.items;
@@ -74,31 +79,44 @@ function App() {
     registerCropper: (ref) => { cropperRef.current = ref.current; },
     
     setPresetRatio: (ratio, label) => {
-      const shouldResetRound = label === "Square"; 
       setSettings(s => ({ 
           ...s, 
-          isRound: shouldResetRound ? false : s.isRound, 
+          isRound: false, 
           aspectRatio: ratio, 
           selectedPreset: label, 
-          customWidth: "", 
-          customHeight: "" 
+          customWidth: "", customHeight: "" 
       }));
-      if (cropperRef.current) cropperRef.current.setAspectRatio(ratio);
+      if (cropperRef.current) {
+          cropperRef.current.enable();
+          cropperRef.current.setAspectRatio(ratio);
+      }
     },
     
     toggleRound: () => {
       setSettings(s => ({ ...s, isRound: true, aspectRatio: 1, selectedPreset: "circle" }));
-      const cropper = cropperRef.current;
-      if (cropper) {
-        cropper.setAspectRatio(1);
-        const data = cropper.getData();
-        cropper.setData({ ...data });
+      if (cropperRef.current) {
+        cropperRef.current.enable();
+        cropperRef.current.setAspectRatio(1);
       }
     },
     
     setFree: () => {
-      setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free" }));
-      if (cropperRef.current) cropperRef.current.setAspectRatio(NaN);
+      if (settings.selectedPreset === "free") {
+         // Switch to View (no crop box)
+         setSettings(s => ({ ...s, selectedPreset: "view" }));
+         if (cropperRef.current) {
+            cropperRef.current.clear();
+            cropperRef.current.disable();
+         }
+      } else {
+         // Switch to Free (enable crop box)
+         setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free" }));
+         if (cropperRef.current) {
+            cropperRef.current.enable();
+            cropperRef.current.crop();
+            cropperRef.current.setAspectRatio(NaN);
+         }
+      }
     },
     
     rotate: (deg) => {
@@ -125,8 +143,11 @@ function App() {
     },
     
     handleCustomSize: (val, type) => {
-      let update = { [type === 'w' ? 'customWidth' : 'customHeight']: val, selectedPreset: null };
-      setSettings(s => ({ ...s, ...update }));
+      setSettings(s => ({ 
+          ...s, 
+          [type === 'w' ? 'customWidth' : 'customHeight']: val, 
+          selectedPreset: null 
+      }));
     },
     
     handleUnitChange: (u) => setSettings(s => ({ ...s, unit: u })),
@@ -145,9 +166,14 @@ function App() {
     download: () => {
       const canvas = generateCanvas(cropperRef.current, settings);
       if (!canvas) return;
+      
       const link = document.createElement("a");
+      
+      // Force PNG if we need transparency
       let format = settings.format;
-      if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') format = 'image/png';
+      if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') {
+          format = 'image/png';
+      }
       
       const ext = format.split("/")[1];
       link.download = `cropyfier-${Date.now()}.${ext}`;
@@ -163,18 +189,18 @@ function App() {
          try {
            const item = new ClipboardItem({ "image/png": blob });
            navigator.clipboard.write([item]);
-           alert("Copied Image to Clipboard!");
+           alert("Image copied to clipboard!");
          } catch (err) {
-           alert("Copy failed.");
+           alert("Clipboard copy failed. Try downloading instead.");
          }
        }, "image/png");
     }
   };
 
   return (
-    // FIX: strict w-screen and h-dvh prevents accidental "zoom out" gestures
     <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col bg-[#020617] overflow-hidden selection:bg-blue-500/30">
       
+      {/* Cropper Styling Overrides */}
       {settings.isRound && (
         <style>{`
             .cropper-view-box, .cropper-face { 
@@ -184,13 +210,13 @@ function App() {
         `}</style>
       )}
 
+      {/* Drag Overlay */}
       {isDragging && (
           <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-md flex items-center justify-center pointer-events-none">
               <div className="text-3xl font-bold text-white animate-bounce drop-shadow-lg">Drop Image to Edit</div>
           </div>
       )}
 
-      {/* Header receives download action now */}
       <Header 
         version="v9.3 Pro" 
         hasImage={!!image} 
@@ -203,7 +229,6 @@ function App() {
           <UploadArea onFileChange={handleFileChange} />
         ) : (
           <>
-            {/* Editor: Added min-h-[30vh] to prevent keyboard from crushing it to 0px on mobile */}
             <div className="flex-1 relative order-1 lg:order-1 bg-[#020617] flex flex-col min-h-[30vh] lg:min-h-0 basis-auto shrink-1">
                  <Editor 
                     image={image} 
@@ -216,7 +241,6 @@ function App() {
                 />
             </div>
 
-            {/* Sidebar: shrink-0 ensures it doesn't get compressed, z-30 keeps it above editor if needed */}
             <div className="order-2 lg:order-2 flex-shrink-0 z-30">
                 <Sidebar 
                     settings={settings} 

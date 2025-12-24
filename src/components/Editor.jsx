@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
 import Cropper from "cropperjs"; 
 import "cropperjs/dist/cropper.css";
-import { generateCanvas } from "../utils/canvasUtils";
+import { generateCanvas, getFilterString } from "../utils/canvasUtils";
 
 export default function Editor({ image, settings, setSettings, isPicking, setIsPicking, actions, activeTab }) {
   const imageElementRef = useRef(null);
@@ -22,52 +22,21 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     actions.registerCropper(cropperInstanceRef);
   }, [actions]);
 
-  // --- 1. DIRECT DOM SYNC ---
-  const syncOverlayPosition = useCallback(() => {
-    const cropper = cropperInstanceRef.current;
-    const overlay = overlayRef.current;
-    const wrapper = wrapperRef.current;
+  // --- 1. DYNAMIC CSS FOR FILTERS (The Fix for filters not showing) ---
+  const filterString = getFilterString(settings);
+  
+  // Logic: If Eraser/Watermark is active, we rely on the canvas Overlay (which has filters baked in).
+  // If only simple Filters are active, we apply CSS to the Cropper directly for performance.
+  const isComplexMode = settings.removeColorActive || settings.watermarkText;
 
-    if (!cropper || !overlay || !wrapper) return;
-
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-    rafRef.current = requestAnimationFrame(() => {
-        // Safety check: if cropper was destroyed mid-frame
-        if (!cropper.cropper) return;
-
-        const cropBoxData = cropper.getCropBoxData();
-        const container = wrapper.querySelector('.cropper-container');
-        
-        if (!container || cropBoxData.width === 0) return;
-        
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        
-        const offsetX = containerRect.left - wrapperRect.left;
-        const offsetY = containerRect.top - wrapperRect.top;
-
-        overlay.style.width = `${cropBoxData.width}px`;
-        overlay.style.height = `${cropBoxData.height}px`;
-        overlay.style.transform = `translate3d(${cropBoxData.left + offsetX}px, ${cropBoxData.top + offsetY}px, 0)`;
-        
-        overlay.style.borderRadius = settings.isRound ? '50%' : '0';
-        
-        overlay.style.display = (previewUrl && !isComparing && !isInteracting) ? 'block' : 'none';
-    });
-  }, [previewUrl, isComparing, isInteracting, settings.isRound]);
-
-  // --- 2. PREVIEW GENERATOR ---
+  // --- 2. PREVIEW GENERATOR (For Eraser/Watermark) ---
   const generatePreview = useCallback(() => {
-    const needsPreview = settings.removeColorActive || settings.watermarkText || isPicking;
-    
-    if (!needsPreview || !image || isInteracting) {
-      return;
-    }
+    if (!isComplexMode || !image || isInteracting) return;
 
     setIsProcessing(true);
     const genId = ++generationRef.current;
 
+    // Small debounce
     setTimeout(() => {
        if (genId !== generationRef.current) return;
        const cropper = cropperInstanceRef.current;
@@ -76,9 +45,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
        const canvas = generateCanvas(cropper, settings);
        
        if (canvas) {
-         const hasTransparency = settings.removeColorActive || settings.format === 'image/png';
-         const mimeType = hasTransparency ? 'image/png' : 'image/jpeg';
-         
          canvas.toBlob((blob) => {
             if (genId !== generationRef.current) return;
             if (!blob) { setIsProcessing(false); return; }
@@ -89,23 +55,63 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 return newUrl;
             });
             setIsProcessing(false);
-         }, mimeType, 0.95);
+         }, 'image/png'); // Always PNG for preview transparency
        } else {
          if (genId === generationRef.current) setIsProcessing(false);
        }
     }, 50); 
-  }, [settings, image, isInteracting, isPicking]);
+  }, [settings, image, isInteracting, isComplexMode]);
 
   useEffect(() => {
     generatePreview();
   }, [generatePreview]);
 
+
+  // --- 3. OVERLAY SYNC (Aligns Preview with Crop Box) ---
+  const syncOverlayPosition = useCallback(() => {
+    const cropper = cropperInstanceRef.current;
+    const overlay = overlayRef.current;
+    const wrapper = wrapperRef.current;
+
+    if (!cropper || !overlay || !wrapper) return;
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    rafRef.current = requestAnimationFrame(() => {
+        if (!cropper.cropper) return; 
+
+        const cropBoxData = cropper.getCropBoxData();
+        const container = wrapper.querySelector('.cropper-container');
+        
+        if (!container || cropBoxData.width === 0 || settings.selectedPreset === 'view') {
+           overlay.style.display = 'none';
+           return;
+        }
+        
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        
+        // Calculate offset of the cropper container within our wrapper
+        const offsetX = containerRect.left - wrapperRect.left;
+        const offsetY = containerRect.top - wrapperRect.top;
+
+        overlay.style.width = `${cropBoxData.width}px`;
+        overlay.style.height = `${cropBoxData.height}px`;
+        overlay.style.transform = `translate3d(${cropBoxData.left + offsetX}px, ${cropBoxData.top + offsetY}px, 0)`;
+        overlay.style.borderRadius = settings.isRound ? '50%' : '0';
+        
+        // Show overlay only if we are in complex mode (Eraser/Text) and not interacting
+        const shouldShow = isComplexMode && previewUrl && !isComparing && !isInteracting;
+        overlay.style.display = shouldShow ? 'block' : 'none';
+    });
+  }, [previewUrl, isComparing, isInteracting, settings.isRound, settings.selectedPreset, isComplexMode]);
+
   useEffect(() => {
     syncOverlayPosition();
-  }, [previewUrl, syncOverlayPosition]);
+  }, [syncOverlayPosition]);
 
 
-  // --- 3. CROPPER LIFECYCLE ---
+  // --- 4. CROPPER LIFECYCLE ---
   useLayoutEffect(() => {
     if (image && imageElementRef.current) {
       if (cropperInstanceRef.current) cropperInstanceRef.current.destroy();
@@ -113,40 +119,35 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
       const cropper = new Cropper(imageElementRef.current, {
         viewMode: 1, 
         dragMode: 'crop', 
-        
         zoomable: false,
-        zoomOnTouch: false,
-        zoomOnWheel: false,
-        movable: false, 
-        scalable: false,
-
-        initialAspectRatio: NaN,
+        restore: false,
         guides: true,
         center: true,
-        background: false,
+        background: false, // We provide our own background
         autoCropArea: 0.8,
         responsive: true,
-        restore: false,
         checkOrientation: false,
-        autoCrop: true,
         modal: true,
-        toggleDragModeOnDblclick: false,
-        
         ready: () => {
+            // Apply initial rotation/flips if they exist in settings
+            if (settings.scaleX !== 1) cropper.scaleX(settings.scaleX);
+            if (settings.scaleY !== 1) cropper.scaleY(settings.scaleY);
+            if (settings.rotation !== 0) cropper.rotate(settings.rotation);
+            
             syncOverlayPosition();
             generatePreview();
+            
+            if (settings.selectedPreset === 'view') {
+                cropper.clear();
+                cropper.disable();
+            }
         },
-        crop: () => {
-            syncOverlayPosition();
-        },
-        cropstart: () => {
-            setIsInteracting(true);
-        },
+        crop: () => { syncOverlayPosition(); },
+        cropstart: () => { setIsInteracting(true); },
         cropend: () => {
             setIsInteracting(false);
-            setTimeout(() => {
-                generatePreview();
-            }, 10);
+            // Re-generate preview after move
+            setTimeout(() => generatePreview(), 10);
         },
         zoom: syncOverlayPosition,
       });
@@ -159,218 +160,223 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         cropperInstanceRef.current = null;
       }
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      document.body.style.cursor = 'default';
     };
   }, [image]); 
 
-  // --- NEW: RESIZE OBSERVER (FIXED FOR CRASH) ---
+
+  // --- 5. INTERACTIONS & EVENTS ---
+
+  // Handle Resize of window
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-        // Safety Check 1: Is wrapper still in DOM?
-        if (!wrapper.isConnected) return;
-
-        // Safety Check 2: Does cropper instance exist?
-        const cropper = cropperInstanceRef.current;
-        if (cropper) {
-            // Safety Check 3: Does cropper have a valid container?
-            // CropperJS throws "undefined reading offsetWidth" if container is missing
-            const container = wrapper.querySelector('.cropper-container');
-            if (container) {
-                // Wrap in requestAnimationFrame to avoid ResizeObserver loop limit exceeded
-                requestAnimationFrame(() => {
-                    try {
-                        cropper.resize();
-                        syncOverlayPosition();
-                    } catch (e) {
-                        // Silent catch if cropper is destroyed mid-resize
-                    }
-                });
-            }
+    const observer = new ResizeObserver(() => {
+        if (cropperInstanceRef.current) {
+            cropperInstanceRef.current.resize();
+            syncOverlayPosition();
         }
     });
-
-    resizeObserver.observe(wrapper);
-    return () => resizeObserver.disconnect();
+    observer.observe(wrapper);
+    return () => observer.disconnect();
   }, [syncOverlayPosition]);
 
-
-  // --- 4. INTERACTIONS & EVENTS ---
-  const isPreviewActive = (settings.removeColorActive || settings.watermarkText) && !isPicking;
-
+  // Manage Class Names & Cursor
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    const cropper = cropperInstanceRef.current;
     
-    const shouldHideOriginal = isPreviewActive && !isComparing && !isInteracting;
-
-    if (shouldHideOriginal) {
-        wrapper.classList.add('preview-active');
+    // Complex Mode: Hide original image inside cropper so Overlay takes precedence
+    if (isComplexMode && !isComparing && !isInteracting) {
+        wrapper.classList.add('complex-mode-active');
     } else {
-        wrapper.classList.remove('preview-active');
+        wrapper.classList.remove('complex-mode-active');
+    }
+
+    if (isPicking || settings.selectedPreset === 'view') {
+        wrapper.classList.add('hide-grid');
+    } else {
+        wrapper.classList.remove('hide-grid');
     }
 
     let targetCursor = 'default';
-    if (isPicking) {
-        if(cropper) cropper.setDragMode('none');
-        targetCursor = 'crosshair';
-    } else if (settings.watermarkText && typeof settings.watermarkPos === 'object') {
-        if(cropper) cropper.setDragMode('none');
-        targetCursor = 'move';
-    } else {
-        if (cropper) {
-            const mode = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crop' : 'none';
-            cropper.setDragMode(mode);
-        }
-        targetCursor = activeTab === 'crop' && settings.dragMode === 'crop' ? 'crosshair' : 'default';
-    }
+    if (isPicking) targetCursor = 'crosshair';
+    else if (settings.watermarkText && typeof settings.watermarkPos === 'object') targetCursor = 'move';
+    else if (activeTab === 'crop' && settings.dragMode === 'crop') targetCursor = 'crosshair';
+    
     document.body.style.cursor = targetCursor;
 
-  }, [isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, settings.removeColorActive, activeTab, isComparing, isPreviewActive, isInteracting]);
+  }, [isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, activeTab, isComparing, isComplexMode, isInteracting, settings.selectedPreset]);
 
 
-  const handleCanvasInteraction = (e) => {
-    if (!cropperInstanceRef.current) return;
-    // ... (rest of interaction logic remains same)
-    if (isPicking) {
-        if (window.EyeDropper) {
-           const eyeDropper = new EyeDropper();
-           eyeDropper.open().then((result) => {
-              setSettings(s => ({ ...s, removeColorHex: result.sRGBHex, removeColorActive: true }));
-              setIsPicking(false);
-           }).catch(() => { setIsPicking(false); });
-        } else {
-           alert("Use Chrome or Edge for Color Picker.");
-           setIsPicking(false);
-        }
-        return;
-    }
-    if (settings.watermarkText && typeof settings.watermarkPos === 'object') {
+  // --- 6. CLICK HANDLER (Color Picker Fallback) ---
+  const handleWrapperClick = async (e) => {
+      // 1. Watermark Position Logic
+      if (settings.watermarkText && typeof settings.watermarkPos === 'object') {
         const cropper = cropperInstanceRef.current;
+        if (!cropper) return;
         const cropBoxData = cropper.getCropBoxData();
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
         const container = wrapperRef.current.querySelector('.cropper-container');
         if(!container) return;
+        
         const containerRect = container.getBoundingClientRect();
-        const mouseXInContainer = clientX - containerRect.left;
-        const mouseYInContainer = clientY - containerRect.top;
-        const relativeX = mouseXInContainer - cropBoxData.left;
-        const relativeY = mouseYInContainer - cropBoxData.top;
+        // Calculate clicks relative to the CROP BOX, not the screen
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        
+        const boxLeft = cropBoxData.left + containerRect.left;
+        const boxTop = cropBoxData.top + containerRect.top;
+        
+        const relativeX = clientX - boxLeft;
+        const relativeY = clientY - boxTop;
+        
         const percentX = Math.max(0, Math.min(1, relativeX / cropBoxData.width));
         const percentY = Math.max(0, Math.min(1, relativeY / cropBoxData.height));
+        
         setSettings(s => ({ ...s, watermarkPos: { x: percentX, y: percentY } }));
-    }
+        return;
+      }
+
+      // 2. Color Picker Logic
+      if (!isPicking) return;
+
+      if (window.EyeDropper) {
+        try {
+            const eyeDropper = new EyeDropper();
+            const result = await eyeDropper.open();
+            setSettings(s => ({ ...s, removeColorHex: result.sRGBHex, removeColorActive: true }));
+            setIsPicking(false);
+        } catch (e) { setIsPicking(false); }
+      } else {
+        // Fallback: Get color from Cropper Canvas
+        const cropper = cropperInstanceRef.current;
+        if(cropper) {
+            const canvas = cropper.getCroppedCanvas(); // Full size canvas of current crop
+            if(!canvas) return;
+            
+            // We need to map the click coordinates on the *screen* to the coordinates on the *canvas*
+            // This is complex because the canvas is scaled in the view.
+            // Simplified approach: Re-render a tiny canvas around the click point is hard.
+            // Easier: Just alert/notify user limitations, OR, disable picker.
+            // BUT, let's try a clever trick:
+            // The `cropper` object has coordinate conversion methods.
+            
+            const container = wrapperRef.current.querySelector('.cropper-container');
+            const rect = container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Get canvas data (original image data)
+            const canvasData = cropper.getCanvasData(); 
+            // Calculate pixel offset relative to image top-left
+            const pixelX = (x - canvasData.left) / canvasData.width * canvas.width; // Approximation
+            const pixelY = (y - canvasData.top) / canvasData.height * canvas.height;
+            
+            // This is still inaccurate because we are looking at the *cropped* canvas context usually.
+            // Let's rely on visual feedback:
+            alert("Please use Chrome or Edge for the best Color Picker experience. On this browser, try manually entering the Hex code.");
+            setIsPicking(false);
+        }
+      }
   };
 
-  const baseFilter = isPreviewActive && !isInteracting && !isComparing ? 'none' : 
-    `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 
   return (
     <div 
         ref={wrapperRef}
+        onClick={handleWrapperClick}
         className="w-full h-full flex items-center justify-center p-4 relative overflow-hidden bg-[#0B0F19]"
     >
-        {/* ... (styles remain the same) */}
+        {/* INJECT DYNAMIC CSS FOR FILTERS */}
         <style>{`
-            .transparency-grid {
-                background-color: #eee;
-                background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
-                                  linear-gradient(-45deg, #ccc 25%, transparent 25%),
-                                  linear-gradient(45deg, transparent 75%, #ccc 75%),
-                                  linear-gradient(-45deg, transparent 75%, #ccc 75%);
-                background-size: 20px 20px;
-                background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            /* Apply filters to the internal cropper images when NOT in complex mode */
+            .cropper-view-box img,
+            .cropper-canvas img {
+                transition: filter 0.15s ease;
+                filter: ${isComplexMode ? 'none' : filterString} !important;
             }
-            .dark .transparency-grid {
+
+            /* Complex Mode: Hide original images so Overlay is visible */
+            .complex-mode-active .cropper-view-box img,
+            .complex-mode-active .cropper-canvas img {
+                opacity: 0 !important;
+            }
+
+            /* Hide Grid Lines in certain modes */
+            .hide-grid .cropper-crop-box,
+            .hide-grid .cropper-point,
+            .hide-grid .cropper-line {
+                opacity: 0 !important;
+            }
+
+            /* Transparency Grid Background */
+            .transparency-grid {
                 background-color: #222;
                 background-image: linear-gradient(45deg, #333 25%, transparent 25%),
                                   linear-gradient(-45deg, #333 25%, transparent 25%),
                                   linear-gradient(45deg, transparent 75%, #333 75%),
                                   linear-gradient(-45deg, transparent 75%, #333 75%);
-            }
-            .hide-crop-ui .cropper-crop-box,
-            .hide-crop-ui .cropper-modal {
-                opacity: 0 !important;
-                pointer-events: none !important;
-                transition: opacity 0.2s ease;
-            }
-            .hide-crop-ui .cropper-view-box { outline: none !important; }
-            
-            .preview-active .cropper-view-box img {
-                opacity: 0 !important;
-                visibility: hidden !important; 
-            }
-            .preview-active .cropper-point,
-            .preview-active .cropper-line,
-            .preview-active .cropper-dashed {
-                opacity: 0.3 !important;
+                background-size: 20px 20px;
+                background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
             }
         `}</style>
 
+        {/* Background Grid */}
         <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#1f2937 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
         
-        {(isPreviewActive || isComparing) && (
+        {/* Compare Button */}
+        {(isComplexMode || isComparing) && (
             <div className="absolute top-4 right-4 z-50">
             <button
                 onPointerDown={() => setIsComparing(true)}
                 onPointerUp={() => setIsComparing(false)}
                 onPointerLeave={() => setIsComparing(false)}
-                className="bg-gray-800/80 backdrop-blur border border-gray-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-lg hover:bg-gray-700 active:scale-95 transition select-none"
+                className="bg-gray-800/80 backdrop-blur border border-gray-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-lg hover:bg-gray-700 select-none"
             >
                 Hold to Compare
             </button>
             </div>
         )}
 
+        {/* Picker Notification */}
         {isPicking && (
-            <div className="absolute top-0 left-0 w-full bg-blue-600 text-white text-center text-xs font-bold py-2 z-50 animate-fade-in">
-            Mode Active: Click to pick color (System Picker)
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in pointer-events-none">
+                <div className="bg-blue-600/90 backdrop-blur-md text-white text-xs font-bold px-6 py-2 rounded-full shadow-2xl flex items-center gap-2">
+                   <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                   <span>Click color to remove</span>
+                </div>
             </div>
         )}
-        {settings.watermarkText && typeof settings.watermarkPos === 'object' && (
-             <div className="absolute top-0 left-0 w-full bg-blue-600 text-white text-center text-xs font-bold py-2 z-50 animate-fade-in">
-             Mode Active: Tap on image to position text
-             </div>
-        )}
 
-        {/* CROPPER CANVAS */}
-        <div style={{ width: '100%', height: '100%', filter: baseFilter }}>
+        {/* Cropper Container */}
+        <div className="w-full h-full">
             <img 
                 ref={imageElementRef} 
                 src={image} 
                 crossOrigin="anonymous" 
-                style={{ maxWidth: '100%', maxHeight: '100%', display: 'block' }} 
+                style={{ maxWidth: '100%', maxHeight: '100%', display: 'block', opacity: 0 }} 
                 alt="Target" 
             />
         </div>
 
+        {/* Generated Preview Overlay (For Eraser/Watermark) */}
         <div 
             ref={overlayRef}
             className="absolute z-20 pointer-events-none" 
             style={{ 
-                position: 'absolute', 
-                top: 0, 
-                left: 0, 
-                display: 'none', 
-                willChange: 'transform, width, height',
+                top: 0, left: 0, display: 'none', 
                 borderRadius: settings.isRound ? '50%' : '0' 
             }} 
         >
-                {(settings.removeColorActive || settings.format !== 'image/jpeg') && (
-                    <div 
-                    className="absolute inset-0 transparency-grid opacity-50 z-0"
-                    style={{ borderRadius: settings.isRound ? '50%' : '0' }}
-                ></div>
-                )}
-
-            {previewUrl && !isComparing && !isInteracting && (
+            {/* Background for transparency */}
+            {isComplexMode && (
+                <div className="absolute inset-0 transparency-grid opacity-50 z-0" style={{ borderRadius: settings.isRound ? '50%' : '0' }}></div>
+            )}
+            
+            {/* The Generated Image */}
+            {previewUrl && (
                 <img 
                     src={previewUrl} 
-                    className="w-full h-full relative z-10 shadow-lg" 
+                    className="w-full h-full relative z-10" 
                     style={{ 
                         objectFit: 'fill', 
                         imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
@@ -381,12 +387,13 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             )}
         </div>
         
-        {isPreviewActive && isProcessing && !isInteracting && (
-                <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                <div className="bg-black/50 p-2 rounded-full backdrop-blur-sm">
-                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        {/* Loading Spinner */}
+        {isComplexMode && isProcessing && !isInteracting && (
+            <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+                <div className="bg-black/50 p-3 rounded-full backdrop-blur-sm">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 </div>
-                </div>
+            </div>
         )}
     </div>
   );
