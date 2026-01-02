@@ -31,7 +31,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     const isComplexMode = settings.removeColorActive || settings.watermarkText;
     const isBrushActive = settings.brushActive;
 
-    // --- PREVIEW GENERATOR (Fixed Leak) ---
+    // --- PREVIEW GENERATOR ---
     const generatePreview = useCallback(() => {
         if (!isComplexMode || !image || isInteracting) return;
 
@@ -52,7 +52,6 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
                     const newUrl = URL.createObjectURL(blob);
                     setPreviewUrl(prevUrl => {
-                        // Cleanup previous preview
                         if (prevUrl) URL.revokeObjectURL(prevUrl);
                         return newUrl;
                     });
@@ -65,21 +64,14 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
     }, [settings, image, isInteracting, isComplexMode]);
 
-    // Initial generation and Cleanup
     useEffect(() => {
         generatePreview();
         return () => {
-            // Unmount cleanup
-            setPreviewUrl(prev => {
-                if (prev) URL.revokeObjectURL(prev);
-                return null;
-            });
+            setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
         };
     }, [generatePreview]);
 
-    // ... [Rest of drawing logic logic remains largely same, just copy previous fixed version or use below] ...
-    
-    // --- DRAWING LOGIC (Copied from previous fix + Eraser) ---
+    // --- DRAWING LOGIC ---
     const getPointerPos = (e, canvas) => {
         const rect = canvas.getBoundingClientRect();
         const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
@@ -134,7 +126,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
     };
 
-    // --- OVERLAY SYNC ---
+    // --- OVERLAY SYNC (FIXED ALIGNMENT) ---
     const syncOverlayPosition = useCallback(() => {
         const cropper = cropperInstanceRef.current;
         const overlay = overlayRef.current;
@@ -158,13 +150,18 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const wrapperRect = wrapper.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
             const wrapperStyle = window.getComputedStyle(wrapper);
-            const paddingLeft = parseFloat(wrapperStyle.paddingLeft) || 0;
-            const paddingTop = parseFloat(wrapperStyle.paddingTop) || 0;
+            
+            // Get wrapper border (to find absolute top/left origin inside border)
             const borderLeft = parseFloat(wrapperStyle.borderLeftWidth) || 0;
             const borderTop = parseFloat(wrapperStyle.borderTopWidth) || 0;
             
-            const offsetX = containerRect.left - (wrapperRect.left + borderLeft + paddingLeft);
-            const offsetY = containerRect.top - (wrapperRect.top + borderTop + paddingTop);
+            // Origin of the absolute element (top-left of the padding box)
+            const absoluteOriginX = wrapperRect.left + borderLeft;
+            const absoluteOriginY = wrapperRect.top + borderTop;
+
+            // Calculate precise visual offset relative to absolute origin
+            const offsetX = containerRect.left - absoluteOriginX;
+            const offsetY = containerRect.top - absoluteOriginY;
 
             const transform = `translate3d(${offsetX + cropBoxData.left}px, ${offsetY + cropBoxData.top}px, 0)`;
             const widthPx = `${cropBoxData.width}px`;
@@ -205,7 +202,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             cropperInstanceRef.current = cropper;
         }
         return () => { if (cropperInstanceRef.current) cropperInstanceRef.current.destroy(); };
-    }, [image]); // Image prop changes when App.jsx updates URL
+    }, [image]);
 
     useEffect(() => {
         const wrapper = wrapperRef.current;
