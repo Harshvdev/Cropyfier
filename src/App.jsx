@@ -5,15 +5,17 @@ import UploadArea from "./components/UploadArea";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import useDragDrop from "./hooks/useDragDrop";
+import useHistory from "./hooks/useHistory"; // IMPORTED
 import { generateCanvas } from "./utils/canvasUtils";
 
-const INITIAL_SETTINGS = {
+// Define outside so we can reset easily
+const DEFAULT_SETTINGS = {
   // Geometry
   scaleX: 1, scaleY: 1, rotation: 0,
   customWidth: "", customHeight: "", lockAspectRatio: true,
   isRound: false, aspectRatio: NaN, selectedPreset: "free",
   
-  // Format
+  // Format (Keep these persistent usually, but reset for now)
   format: "image/jpeg", quality: 0.9, 
   dragMode: "crop",
   unit: "px", dpi: 300, interpolation: "high", 
@@ -33,8 +35,18 @@ const INITIAL_SETTINGS = {
 };
 
 function App() {
-  const [image, setImage] = useState(null);
-  const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  // Replace simple image state with History Hook
+  const { 
+    state: image, 
+    pushState: pushHistory, 
+    undo, 
+    redo, 
+    canUndo, 
+    canRedo,
+    resetHistory 
+  } = useHistory(null);
+
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [isPicking, setIsPicking] = useState(false);
   const [activeTab, setActiveTab] = useState("crop");
   
@@ -45,13 +57,15 @@ function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-        setImage(reader.result);
+        // Reset everything on new file upload
+        resetHistory(reader.result);
+        
         let detectedFormat = "image/jpeg";
         if (file.type === "image/png") detectedFormat = "image/png";
         if (file.type === "image/webp") detectedFormat = "image/webp";
         
         setSettings({ 
-            ...INITIAL_SETTINGS, 
+            ...DEFAULT_SETTINGS, 
             format: detectedFormat,
             quality: file.size < 500000 ? 0.8 : 0.9 
         });
@@ -74,6 +88,42 @@ function App() {
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
+
+  // --- UNDO / REDO HANDLERS ---
+  const handleUndo = () => {
+    undo();
+    // When undoing, we must reset settings to default, otherwise 
+    // the filters/crops will apply on top of the old image state.
+    setSettings(s => ({ ...DEFAULT_SETTINGS, format: s.format, quality: s.quality }));
+  };
+
+  const handleRedo = () => {
+    redo();
+    setSettings(s => ({ ...DEFAULT_SETTINGS, format: s.format, quality: s.quality }));
+  };
+
+  // --- SAVE / APPLY LOGIC ---
+  const handleApply = () => {
+    const canvas = generateCanvas(cropperRef.current, settings);
+    if (!canvas) return;
+
+    // Convert current state to a PNG DataURL (Always PNG to preserve transparency during edits)
+    // We don't use the user's selected format (e.g. JPG) until the final Download.
+    const newImageState = canvas.toDataURL("image/png");
+
+    // 1. Push new image to history stack
+    pushHistory(newImageState);
+
+    // 2. Reset "Destructive" Settings
+    // We keep format/quality/dpi settings, but reset geometry, filters, and eraser
+    setSettings(prev => ({
+        ...DEFAULT_SETTINGS,
+        format: prev.format,
+        quality: prev.quality,
+        dpi: prev.dpi,
+        unit: prev.unit
+    }));
+  };
 
   const actions = {
     registerCropper: (ref) => { cropperRef.current = ref.current; },
@@ -102,14 +152,12 @@ function App() {
     
     setFree: () => {
       if (settings.selectedPreset === "free") {
-         // Switch to View (no crop box)
          setSettings(s => ({ ...s, selectedPreset: "view" }));
          if (cropperRef.current) {
             cropperRef.current.clear();
             cropperRef.current.disable();
          }
       } else {
-         // Switch to Free (enable crop box)
          setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free" }));
          if (cropperRef.current) {
             cropperRef.current.enable();
@@ -159,22 +207,20 @@ function App() {
     togglePicker: () => setIsPicking(prev => !prev),
     
     cancel: () => {
-      setImage(null);
-      setSettings(INITIAL_SETTINGS);
+      resetHistory(null);
+      setSettings(DEFAULT_SETTINGS);
     },
 
     download: () => {
+      // For final download, we generate based on current settings
       const canvas = generateCanvas(cropperRef.current, settings);
       if (!canvas) return;
       
       const link = document.createElement("a");
-      
-      // Force PNG if we need transparency
       let format = settings.format;
       if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') {
           format = 'image/png';
       }
-      
       const ext = format.split("/")[1];
       link.download = `cropyfier-${Date.now()}.${ext}`;
       link.href = canvas.toDataURL(format, settings.quality);
@@ -200,7 +246,6 @@ function App() {
   return (
     <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col bg-[#020617] overflow-hidden selection:bg-blue-500/30">
       
-      {/* Cropper Styling Overrides */}
       {settings.isRound && (
         <style>{`
             .cropper-view-box, .cropper-face { 
@@ -210,7 +255,6 @@ function App() {
         `}</style>
       )}
 
-      {/* Drag Overlay */}
       {isDragging && (
           <div className="absolute inset-0 z-[100] bg-blue-600/80 backdrop-blur-md flex items-center justify-center pointer-events-none">
               <div className="text-3xl font-bold text-white animate-bounce drop-shadow-lg">Drop Image to Edit</div>
@@ -218,10 +262,17 @@ function App() {
       )}
 
       <Header 
-        version="v9.3 Pro" 
+        version="v9.5 Pro" 
         hasImage={!!image} 
         onCancel={actions.cancel} 
         onDownload={actions.download}
+        
+        // Pass Undo/Redo/Save props
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onApply={handleApply}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
       
       <main className="flex-1 flex flex-col lg:flex-row relative w-full overflow-hidden">
