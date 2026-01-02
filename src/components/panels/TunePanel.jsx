@@ -1,3 +1,4 @@
+// src/components/panels/TunePanel.jsx
 import Slider from "../ui/Slider";
 
 export default function TunePanel({ settings, setSettings, actions }) {
@@ -22,14 +23,24 @@ export default function TunePanel({ settings, setSettings, actions }) {
                Magic Eraser <span className="bg-purple-500/20 text-purple-300 px-1.5 rounded text-[8px]">PRO</span>
             </h3>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" checked={settings.removeColorActive} onChange={() => update('removeColorActive', !settings.removeColorActive)} />
-              <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={settings.removeColorActive} 
+                onChange={() => {
+                   // Auto-enable preview when turning on
+                   update('removeColorActive', !settings.removeColorActive);
+                   if(!settings.removeColorActive) update('showMaskPreview', true);
+                }} 
+              />
+              <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:bg-purple-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
             </label>
          </div>
 
          {settings.removeColorActive && (
             <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-xl space-y-4 animate-fade-in">
                
+               {/* Color & Picker */}
                <div className="flex items-center gap-3">
                   <div className="flex-1">
                      <label className="text-[9px] font-bold text-purple-300 uppercase block mb-1">Target Color</label>
@@ -51,6 +62,7 @@ export default function TunePanel({ settings, setSettings, actions }) {
                   </div>
                </div>
                
+               {/* SLIDERS (Verified Working with new canvasUtils) */}
                <Slider 
                   label="Color Similarity" 
                   value={settings.removeTolerance} 
@@ -68,8 +80,32 @@ export default function TunePanel({ settings, setSettings, actions }) {
                   unit="px"
                />
                
-               <p className="text-[9px] text-gray-400">
-                  Select the main background color first. Then increase "Shrink Edges" to 1px to remove white halos.
+               {/* HIGHLIGHT TOGGLE */}
+               <div className="flex items-center justify-between bg-gray-900/50 p-2 rounded-lg border border-gray-700/50">
+                  <span className="text-[10px] text-gray-300 font-bold">Show Red Highlight</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={settings.showMaskPreview} onChange={() => update('showMaskPreview', !settings.showMaskPreview)} />
+                    <div className="w-7 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:bg-red-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+                  </label>
+               </div>
+
+               {/* PROTECTION BRUSH */}
+               <button 
+                   type="button"
+                   onClick={() => update('brushActive', !settings.brushActive)}
+                   className={`w-full py-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition border ${
+                       settings.brushActive 
+                       ? "bg-green-600 border-green-500 text-white shadow-lg shadow-green-500/20" 
+                       : "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700"
+                   }`}
+               >
+                   <span>{settings.brushActive ? "🛑 Stop Protecting" : "🛡️ Protect Area (Brush)"}</span>
+               </button>
+
+               <p className="text-[9px] text-gray-400 leading-relaxed">
+                  1. Areas in <strong>Red</strong> will be removed.<br/>
+                  2. Use <strong>Protect Area</strong> to draw over parts you want to keep.<br/>
+                  3. Click <strong>Save Step</strong> at the top to apply changes.
                </p>
             </div>
          )}

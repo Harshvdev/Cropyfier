@@ -4,11 +4,10 @@ export const getFilterString = (settings) => {
   return `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 };
 
-export const generateCanvas = (cropper, settings) => {
+export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
   if (!cropper) return null;
 
-  // 1. Determine Output Format & Transparency
-  // If we are removing color or using round crop, we force transparency handling
+  // 1. Setup Options
   const needsTransparency = settings.removeColorActive || settings.isRound || settings.format === "image/png" || settings.format === "image/webp";
   const fillColor = needsTransparency ? "transparent" : "#ffffff";
 
@@ -18,20 +17,17 @@ export const generateCanvas = (cropper, settings) => {
     imageSmoothingQuality: settings.interpolation === 'high' ? "high" : "medium",
   };
 
-  // 2. Handle Custom Dimensions (Resizing)
+  // 2. Custom Size Logic
   if (settings.customWidth || settings.customHeight) {
     let w = parseFloat(settings.customWidth);
     let h = parseFloat(settings.customHeight);
     const dpi = settings.dpi || 300;
-    
-    // Get natural data to determine aspect ratio
     const data = cropper.getData(); 
     const ratio = data.width / data.height;
 
     if (!w && h) w = h * ratio;
     if (!h && w) h = w / ratio;
 
-    // Unit Conversion
     if (settings.unit === "in") { w *= dpi; h *= dpi; }
     else if (settings.unit === "cm") { w = (w * dpi) / 2.54; h = (h * dpi) / 2.54; }
     else if (settings.unit === "mm") { w = (w * dpi) / 25.4; h = (h * dpi) / 25.4; }
@@ -40,7 +36,7 @@ export const generateCanvas = (cropper, settings) => {
     options.height = Math.round(h);
   }
 
-  // 3. Get Base Canvas
+  // 3. Get Base Image
   const rawCanvas = cropper.getCroppedCanvas(options);
   if (!rawCanvas) return null;
 
@@ -55,76 +51,114 @@ export const generateCanvas = (cropper, settings) => {
      workCanvas.style.imageRendering = 'pixelated';
   }
 
-  // 5. Draw raw image
   ctx.drawImage(rawCanvas, 0, 0);
 
-  // 6. Apply Background Removal (Magic Eraser)
+  // 5. MAGIC ERASER LOGIC
   if (settings.removeColorActive) {
-     const imgData = ctx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+     const width = workCanvas.width;
+     const height = workCanvas.height;
+     const imgData = ctx.getImageData(0, 0, width, height);
      const data = imgData.data;
      
-     // Parse Hex
+     // 0 = Keep (Subject), 1 = Remove (Background)
+     const mask = new Uint8Array(width * height); 
+
+     // 5a. Prepare Protection Mask
+     let protectionData = null;
+     if (protectionCanvas) {
+        const pTemp = document.createElement('canvas');
+        pTemp.width = width;
+        pTemp.height = height;
+        const pCtx = pTemp.getContext('2d');
+        pCtx.drawImage(protectionCanvas, 0, 0, width, height);
+        protectionData = pCtx.getImageData(0, 0, width, height).data;
+     }
+
+     // 5b. Parse Target Color
      let hex = settings.removeColorHex.replace('#', '');
      if(hex.length === 3) hex = hex.split('').map(c => c+c).join('');
-     
      const rT = parseInt(hex.substring(0,2), 16);
      const gT = parseInt(hex.substring(2,4), 16);
      const bT = parseInt(hex.substring(4,6), 16);
      
-     const MAX_DIST_SQ = 195075; // 255^2 * 3
+     const MAX_DIST_SQ = 195075;
      const tPct = settings.removeTolerance / 100;
      const thresholdSq = tPct * tPct * MAX_DIST_SQ;
 
-     // Pass 1: Remove Color
-     for (let i = 0; i < data.length; i += 4) {
-         const r = data[i], g = data[i+1], b = data[i+2];
-         // Simple Euclidean distance squared
-         const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
-         if (distSq < thresholdSq) {
-             data[i+3] = 0; // Set Alpha to 0
+     // 5c. PASS 1: Identification (Build Mask)
+     for (let y = 0; y < height; y++) {
+         for (let x = 0; x < width; x++) {
+             const idx = (y * width + x);
+             const i = idx * 4;
+
+             // Check Protection - Explicitly mark as 0 (Keep)
+             if (protectionData && protectionData[i+3] > 0) {
+                 mask[idx] = 0; 
+                 continue;
+             }
+
+             const r = data[i], g = data[i+1], b = data[i+2];
+             const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+
+             if (distSq < thresholdSq) {
+                 mask[idx] = 1; // Mark for removal
+             }
          }
      }
 
-     // Pass 2: Erosion (Edge Cleanup)
+     // 5d. PASS 2: EXPAND EDGES (Grow the Red Mask / Shrink the Object)
+     // FIX: Previously we shrunk the mask. Now we grow it to eat halos.
      if (settings.removeErosion > 0) {
-        const width = workCanvas.width;
-        const height = workCanvas.height;
-        const protectionThresholdSq = thresholdSq * 4; // Stricter logic for edges
+         const loops = Math.min(settings.removeErosion, 10);
+         
+         for(let k=0; k<loops; k++) {
+             const maskCopy = new Uint8Array(mask); 
+             
+             for (let y = 0; y < height; y++) {
+                 for (let x = 0; x < width; x++) {
+                     const idx = y * width + x;
+                     
+                     // If pixel is currently Subject (0)
+                     if (maskCopy[idx] === 0) {
 
-        // We clone alpha channel to check neighbors without dirty reads
-        const alphaCopy = new Uint8Array(data.length / 4);
-        for (let j = 0; j < data.length; j += 4) alphaCopy[j/4] = data[j+3];
+                         // Safety: Do not eat into user-protected areas
+                         if (protectionData && protectionData[idx*4+3] > 0) continue;
 
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const idx = y * width + x;
-                // If pixel is visible
-                if (alphaCopy[idx] > 0) {
-                    // Check 4 neighbors
-                    const isEdge = (x > 0 && alphaCopy[idx - 1] === 0) || 
-                                   (x < width - 1 && alphaCopy[idx + 1] === 0) ||
-                                   (y > 0 && alphaCopy[idx - width] === 0) ||
-                                   (y < height - 1 && alphaCopy[idx + width] === 0);
-                    
-                    if (isEdge) {
-                        // Check color distance again - if it's kinda close to target, kill it
-                        const r = data[idx*4], g = data[idx*4+1], b = data[idx*4+2];
-                        const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
-                        
-                        // If it's on the edge and vaguely resembles the background, erode it
-                        // Logic: reduce alpha based on erosion strength
-                        if (distSq < protectionThresholdSq) {
-                           data[idx*4+3] = 0; 
-                        }
-                    }
-                }
-            }
-        }
+                         // Check neighbors. If any neighbor is Background (1), this pixel joins the background.
+                         const isEdge = (x > 0 && maskCopy[idx-1] === 1) ||
+                                        (x < width-1 && maskCopy[idx+1] === 1) ||
+                                        (y > 0 && maskCopy[idx-width] === 1) ||
+                                        (y < height-1 && maskCopy[idx+width] === 1);
+                         
+                         if (isEdge) {
+                             mask[idx] = 1; // Grow the mask
+                         }
+                     }
+                 }
+             }
+         }
      }
+
+     // 5e. PASS 3: Apply Mask to Image
+     for (let j = 0; j < mask.length; j++) {
+         if (mask[j] === 1) {
+             const i = j * 4;
+             if (settings.showMaskPreview) {
+                 // HIGHLIGHTER: Red Blend
+                 data[i] = (data[i] + 255) / 2;
+                 data[i+1] = data[i+1] / 2;
+                 data[i+2] = data[i+2] / 2;
+             } else {
+                 // ERASER: Transparent
+                 data[i+3] = 0;
+             }
+         }
+     }
+     
      ctx.putImageData(imgData, 0, 0);
   }
 
-  // 7. Apply CSS Filters
+  // 6. Apply CSS Filters
   const filterCanvas = document.createElement("canvas");
   filterCanvas.width = workCanvas.width;
   filterCanvas.height = workCanvas.height;
@@ -133,7 +167,7 @@ export const generateCanvas = (cropper, settings) => {
   fCtx.filter = getFilterString(settings);
   fCtx.drawImage(workCanvas, 0, 0);
 
-  // 8. Apply Round Crop Mask
+  // 7. Round Crop
   if (settings.isRound) {
     fCtx.globalCompositeOperation = 'destination-in';
     fCtx.beginPath();
@@ -146,7 +180,7 @@ export const generateCanvas = (cropper, settings) => {
     fCtx.globalCompositeOperation = 'source-over'; 
   }
 
-  // 9. Apply Watermark
+  // 8. Watermark
   if (settings.watermarkText) {
      fCtx.save();
      fCtx.globalAlpha = settings.watermarkOpacity;
@@ -157,35 +191,24 @@ export const generateCanvas = (cropper, settings) => {
      const textMetrics = fCtx.measureText(text);
      const textWidth = textMetrics.width;
      const textHeight = settings.watermarkSize;
-
-     let wx = 0, wy = 0;
-     const pad = 20;
-     const W = filterCanvas.width;
-     const H = filterCanvas.height;
+     const W = filterCanvas.width, H = filterCanvas.height;
+     let wx = (W - textWidth)/2, wy = H/2; 
 
      if (typeof settings.watermarkPos === 'string') {
          fCtx.textBaseline = 'middle';
-         switch(settings.watermarkPos) {
-            case 'Top-Left': wx = pad; wy = pad + textHeight/2; break;
-            case 'Top': wx = (W - textWidth)/2; wy = pad + textHeight/2; break;
-            case 'Top-Right': wx = W - textWidth - pad; wy = pad + textHeight/2; break;
-            case 'Left': wx = pad; wy = H/2; break;
-            case 'Center': wx = (W - textWidth)/2; wy = H/2; break;
-            case 'Right': wx = W - textWidth - pad; wy = H/2; break;
-            case 'Bottom-Left': wx = pad; wy = H - pad - textHeight/2; break;
-            case 'Bottom': wx = (W - textWidth)/2; wy = H - pad - textHeight/2; break;
-            case 'Bottom-Right': wx = W - textWidth - pad; wy = H - pad - textHeight/2; break;
-            default: wx = (W - textWidth)/2; wy = H/2;
-         }
+         if(settings.watermarkPos === 'Top-Left') { wx=20; wy=20+textHeight/2; }
+         else if(settings.watermarkPos === 'Top') { wy=20+textHeight/2; }
+         else if(settings.watermarkPos === 'Top-Right') { wx=W-textWidth-20; wy=20+textHeight/2; }
+         else if(settings.watermarkPos === 'Left') { wx=20; }
+         else if(settings.watermarkPos === 'Right') { wx=W-textWidth-20; }
+         else if(settings.watermarkPos === 'Bottom-Left') { wx=20; wy=H-20-textHeight/2; }
+         else if(settings.watermarkPos === 'Bottom') { wy=H-20-textHeight/2; }
+         else if(settings.watermarkPos === 'Bottom-Right') { wx=W-textWidth-20; wy=H-20-textHeight/2; }
      } else if (typeof settings.watermarkPos === 'object') {
          fCtx.textBaseline = 'top';
-         wx = settings.watermarkPos.x * W;
-         wy = settings.watermarkPos.y * H;
-         // Center the text on the point
-         wx -= textWidth / 2;
-         wy -= textHeight / 2;
+         wx = settings.watermarkPos.x * W - textWidth/2;
+         wy = settings.watermarkPos.y * H - textHeight/2;
      }
-
      fCtx.fillText(text, wx, wy);
      fCtx.restore();
   }
