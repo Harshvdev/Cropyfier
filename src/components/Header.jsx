@@ -1,5 +1,15 @@
 // src/components/Header.jsx
-export default function Header({ version, hasImage, onCancel, onDownload }) {
+export default function Header({ 
+    version, 
+    hasImage, 
+    onCancel, 
+    onDownload, 
+    onUndo, 
+    onRedo, 
+    onApply, 
+    canUndo, 
+    canRedo 
+}) {
   return (
     <header className="h-16 flex-shrink-0 flex justify-between items-center px-4 lg:px-6 border-b border-white/5 bg-[#020617]/80 backdrop-blur-md z-50">
       
@@ -16,23 +26,54 @@ export default function Header({ version, hasImage, onCancel, onDownload }) {
         </div>
       </div>
 
+      {/* History & Apply Controls (Middle) */}
+      {hasImage && (
+        <div className="flex items-center gap-2">
+            <button 
+                onClick={onUndo} 
+                disabled={!canUndo}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition"
+                title="Undo"
+            >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+            </button>
+            <button 
+                onClick={onRedo} 
+                disabled={!canRedo}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition"
+                title="Redo"
+            >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" /></svg>
+            </button>
+            
+            <div className="h-6 w-px bg-white/10 mx-2"></div>
+
+            <button 
+                onClick={onApply}
+                className="bg-gray-800 hover:bg-green-600 text-white text-xs font-bold px-4 py-2 rounded-lg border border-gray-700 hover:border-green-500 transition shadow-sm flex items-center gap-2 group"
+            >
+                <span>Save Step</span>
+                <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+            </button>
+        </div>
+      )}
+
       {/* Right Actions */}
       <div className="flex items-center gap-3">
         {hasImage && (
             <>
-                {/* Desktop Version Badge */}
                 <div className="hidden lg:block text-gray-600 text-[10px] font-mono border border-gray-800 px-2 py-1 rounded-md mr-2">
                     {version}
                 </div>
 
                 <button 
                     onClick={onCancel}
-                    className="text-xs font-bold text-gray-400 hover:text-white transition hover:bg-white/10 px-4 py-2 rounded-lg"
+                    className="text-xs font-bold text-gray-400 hover:text-red-400 transition hover:bg-white/10 px-4 py-2 rounded-lg"
                 >
-                    Reset
+                    Reset All
                 </button>
 
-                {/* Primary Action Button - Moved from Export Panel to Header */}
+                {/* Download Button */}
                 <button 
                     onClick={onDownload}
                     className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-lg shadow-blue-500/20 active:scale-95 transition flex items-center gap-2"
