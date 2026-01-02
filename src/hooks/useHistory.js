@@ -1,6 +1,8 @@
 // src/hooks/useHistory.js
 import { useState, useCallback } from 'react';
 
+const MAX_HISTORY = 20; // Limit undo steps to conserve memory
+
 export default function useHistory(initialState) {
   const [index, setIndex] = useState(0);
   const [history, setHistory] = useState([initialState]);
@@ -9,26 +11,29 @@ export default function useHistory(initialState) {
 
   const pushState = useCallback((newState) => {
     setHistory((prev) => {
-      // If we are in the middle of history and modify state,
-      // discard the "future" states
-      const newHistory = prev.slice(0, index + 1);
-      return [...newHistory, newState];
+      // 1. Slice current future out
+      let newHistory = prev.slice(0, index + 1);
+      // 2. Add new state
+      newHistory.push(newState);
+      // 3. Limit size by shifting from front if needed
+      if (newHistory.length > MAX_HISTORY) {
+         newHistory = newHistory.slice(newHistory.length - MAX_HISTORY);
+      }
+      return newHistory;
     });
-    setIndex((prev) => prev + 1);
+    // Update index (clamped to length)
+    setIndex((prev) => {
+       const nextIndex = prev + 1;
+       return nextIndex >= MAX_HISTORY ? MAX_HISTORY - 1 : nextIndex;
+    });
   }, [index]);
 
   const undo = useCallback(() => {
-    setIndex((prev) => {
-      if (prev > 0) return prev - 1;
-      return prev;
-    });
+    setIndex((prev) => Math.max(0, prev - 1));
   }, []);
 
   const redo = useCallback(() => {
-    setIndex((prev) => {
-      if (prev < history.length - 1) return prev + 1;
-      return prev;
-    });
+    setIndex((prev) => Math.min(history.length - 1, prev + 1));
   }, [history.length]);
 
   const resetHistory = useCallback((newState) => {
