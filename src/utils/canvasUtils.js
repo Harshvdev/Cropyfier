@@ -1,5 +1,7 @@
 // src/utils/canvasUtils.js
 
+const MAX_CANVAS_SIZE = 8192; // Prevent browser crashes
+
 export const getFilterString = (settings) => {
   return `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 };
@@ -17,10 +19,15 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
     imageSmoothingQuality: settings.interpolation === 'high' ? "high" : "medium",
   };
 
-  // 2. Custom Size Logic
+  // 2. Custom Size Logic (With Safety Validation)
   if (settings.customWidth || settings.customHeight) {
     let w = parseFloat(settings.customWidth);
     let h = parseFloat(settings.customHeight);
+    
+    // Safety check for NaN or Infinity
+    if (isNaN(w) || w <= 0) w = 0;
+    if (isNaN(h) || h <= 0) h = 0;
+
     const dpi = settings.dpi || 300;
     const data = cropper.getData(); 
     const ratio = data.width / data.height;
@@ -32,8 +39,9 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
     else if (settings.unit === "cm") { w = (w * dpi) / 2.54; h = (h * dpi) / 2.54; }
     else if (settings.unit === "mm") { w = (w * dpi) / 25.4; h = (h * dpi) / 25.4; }
 
-    options.width = Math.round(w);
-    options.height = Math.round(h);
+    // Clamp dimensions to prevent crash
+    options.width = Math.min(Math.round(w), MAX_CANVAS_SIZE);
+    options.height = Math.min(Math.round(h), MAX_CANVAS_SIZE);
   }
 
   // 3. Get Base Image
@@ -44,6 +52,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
   const workCanvas = document.createElement("canvas");
   workCanvas.width = rawCanvas.width;
   workCanvas.height = rawCanvas.height;
+  // 'willReadFrequently' optimizes for read-heavy operations like Magic Eraser
   const ctx = workCanvas.getContext("2d", { willReadFrequently: true });
 
   if (settings.interpolation === 'pixelated') {
@@ -53,7 +62,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
 
   ctx.drawImage(rawCanvas, 0, 0);
 
-  // 5. MAGIC ERASER LOGIC
+  // 5. MAGIC ERASER LOGIC (OPTIMIZED)
   if (settings.removeColorActive) {
      const width = workCanvas.width;
      const height = workCanvas.height;
@@ -61,7 +70,8 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      const data = imgData.data;
      
      // 0 = Keep (Subject), 1 = Remove (Background)
-     const mask = new Uint8Array(width * height); 
+     // Use one buffer for state, avoiding re-allocation in loops
+     let mask = new Uint8Array(width * height); 
 
      // 5a. Prepare Protection Mask
      let protectionData = null;
@@ -69,7 +79,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
         const pTemp = document.createElement('canvas');
         pTemp.width = width;
         pTemp.height = height;
-        const pCtx = pTemp.getContext('2d');
+        const pCtx = pTemp.getContext('2d', { willReadFrequently: true });
         pCtx.drawImage(protectionCanvas, 0, 0, width, height);
         protectionData = pCtx.getImageData(0, 0, width, height).data;
      }
@@ -85,71 +95,67 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      const tPct = settings.removeTolerance / 100;
      const thresholdSq = tPct * tPct * MAX_DIST_SQ;
 
-     // 5c. PASS 1: Identification (Build Mask)
-     for (let y = 0; y < height; y++) {
-         for (let x = 0; x < width; x++) {
-             const idx = (y * width + x);
-             const i = idx * 4;
+     // 5c. PASS 1: Identification
+     for (let i = 0; i < width * height; i++) {
+         const idx = i * 4;
 
-             // Check Protection - Explicitly mark as 0 (Keep)
-             if (protectionData && protectionData[i+3] > 0) {
-                 mask[idx] = 0; 
-                 continue;
-             }
+         // Check Protection - Explicitly mark as 0 (Keep)
+         if (protectionData && protectionData[idx+3] > 0) {
+             mask[i] = 0; 
+             continue;
+         }
 
-             const r = data[i], g = data[i+1], b = data[i+2];
-             const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+         const r = data[idx], g = data[idx+1], b = data[idx+2];
+         const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
 
-             if (distSq < thresholdSq) {
-                 mask[idx] = 1; // Mark for removal
-             }
+         if (distSq < thresholdSq) {
+             mask[i] = 1; // Mark for removal
          }
      }
 
-     // 5d. PASS 2: EXPAND EDGES (Grow the Red Mask / Shrink the Object)
-     // FIX: Previously we shrunk the mask. Now we grow it to eat halos.
+     // 5d. PASS 2: EXPAND EDGES (Optimized - No internal allocation)
      if (settings.removeErosion > 0) {
          const loops = Math.min(settings.removeErosion, 10);
+         // Pre-allocate the swap buffer ONCE
+         let nextMask = new Uint8Array(width * height);
          
          for(let k=0; k<loops; k++) {
-             const maskCopy = new Uint8Array(mask); 
-             
+             // Copy current state to nextMask initially
+             nextMask.set(mask);
+
              for (let y = 0; y < height; y++) {
                  for (let x = 0; x < width; x++) {
                      const idx = y * width + x;
                      
-                     // If pixel is currently Subject (0)
-                     if (maskCopy[idx] === 0) {
-
-                         // Safety: Do not eat into user-protected areas
+                     // Only process if currently Subject(0) to see if we should eat it
+                     if (mask[idx] === 0) {
                          if (protectionData && protectionData[idx*4+3] > 0) continue;
 
-                         // Check neighbors. If any neighbor is Background (1), this pixel joins the background.
-                         const isEdge = (x > 0 && maskCopy[idx-1] === 1) ||
-                                        (x < width-1 && maskCopy[idx+1] === 1) ||
-                                        (y > 0 && maskCopy[idx-width] === 1) ||
-                                        (y < height-1 && maskCopy[idx+width] === 1);
+                         const isEdge = (x > 0 && mask[idx-1] === 1) ||
+                                        (x < width-1 && mask[idx+1] === 1) ||
+                                        (y > 0 && mask[idx-width] === 1) ||
+                                        (y < height-1 && mask[idx+width] === 1);
                          
                          if (isEdge) {
-                             mask[idx] = 1; // Grow the mask
+                             nextMask[idx] = 1; 
                          }
                      }
                  }
              }
+             // Update mask for next iteration
+             mask.set(nextMask);
          }
      }
 
-     // 5e. PASS 3: Apply Mask to Image
+     // 5e. PASS 3: Apply Mask
      for (let j = 0; j < mask.length; j++) {
          if (mask[j] === 1) {
              const i = j * 4;
              if (settings.showMaskPreview) {
-                 // HIGHLIGHTER: Red Blend
                  data[i] = (data[i] + 255) / 2;
                  data[i+1] = data[i+1] / 2;
                  data[i+2] = data[i+2] / 2;
              } else {
-                 // ERASER: Transparent
                  data[i+3] = 0;
              }
          }
@@ -162,7 +168,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
   const filterCanvas = document.createElement("canvas");
   filterCanvas.width = workCanvas.width;
   filterCanvas.height = workCanvas.height;
-  const fCtx = filterCanvas.getContext("2d");
+  const fCtx = filterCanvas.getContext("2d", { willReadFrequently: true });
   
   fCtx.filter = getFilterString(settings);
   fCtx.drawImage(workCanvas, 0, 0);
