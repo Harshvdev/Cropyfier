@@ -1,4 +1,14 @@
+// src/components/panels/ResizePanel.jsx
 export default function ResizePanel({ settings, setSettings, actions }) {
+  
+  // Safe handler to prevent non-numeric characters
+  const handleInput = (val, type) => {
+    // Allow empty string for backspace, otherwise ensure regex match for numbers
+    if (val === "" || /^\d+$/.test(val)) {
+        actions.handleCustomSize(val, type);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex gap-3">
@@ -34,11 +44,12 @@ export default function ResizePanel({ settings, setSettings, actions }) {
             <div key={label} className="relative group">
               <label className="absolute top-2 left-3 text-[10px] text-gray-500 font-bold">{label[0]}</label>
               <input 
-                type="number" 
-                min="1"
+                type="text" 
+                inputMode="numeric"
+                pattern="[0-9]*"
                 placeholder="Auto" 
                 value={label === 'Width' ? settings.customWidth : settings.customHeight} 
-                onChange={(e) => actions.handleCustomSize(e.target.value, label === 'Width' ? 'w' : 'h')} 
+                onChange={(e) => handleInput(e.target.value, label === 'Width' ? 'w' : 'h')} 
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-2.5 text-sm outline-none focus:border-blue-500 text-white" 
               />
             </div>
@@ -46,7 +57,6 @@ export default function ResizePanel({ settings, setSettings, actions }) {
         </div>
       </div>
 
-      {/* NEW: Scaling Algorithm / Interpolation */}
       <div className="bg-gray-800/30 p-5 rounded-xl border border-gray-700/50">
          <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block">Resampling Mode</label>
          <select 
