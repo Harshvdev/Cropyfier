@@ -96,7 +96,133 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      const thresholdSq = tPct * tPct * MAX_DIST_SQ;
 
       // 5c. PASS 1: Identification
-      if (settings.removeContiguousOnly) {
+      if (settings.removeColorActive && settings.removeGridActive) {
+          const rows = Math.max(1, parseInt(settings.removeGridRows) || 1);
+          const cols = Math.max(1, parseInt(settings.removeGridCols) || 1);
+
+          for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                  const x0 = Math.floor((c * width) / cols);
+                  const x1 = Math.floor(((c + 1) * width) / cols);
+                  const y0 = Math.floor((r * height) / rows);
+                  const y1 = Math.floor(((r + 1) * height) / rows);
+
+                  const cellW = x1 - x0;
+                  const cellH = y1 - y0;
+                  if (cellW <= 0 || cellH <= 0) continue;
+
+                  let queue = new Uint32Array(Math.min(cellW * cellH, 65536));
+                  let queueStart = 0;
+                  let queueEnd = 0;
+
+                  const pushQueue = (idx) => {
+                      if (queueEnd >= queue.length) {
+                          const newQueue = new Uint32Array(queue.length * 2);
+                          newQueue.set(queue);
+                          queue = newQueue;
+                      }
+                      queue[queueEnd++] = idx;
+                  };
+
+                  const matchesAndNotProtected = (idx) => {
+                      if (protectionData && protectionData[idx * 4 + 3] > 0) {
+                          return false;
+                      }
+                      const px = idx % width;
+                      const py = Math.floor(idx / width);
+                      if (px < x0 || px >= x1 || py < y0 || py >= y1) {
+                          return false;
+                      }
+                      const rVal = data[idx * 4];
+                      const gVal = data[idx * 4 + 1];
+                      const bVal = data[idx * 4 + 2];
+                      const distSq = (rVal - rT)**2 + (gVal - gT)**2 + (bVal - bT)**2;
+                      return distSq < thresholdSq;
+                  };
+
+                  const seedDepth = Math.min(3, Math.min(cellW, cellH));
+
+                  // Seed from local cell boundaries
+                  for (let cx = x0; cx < x1; cx++) {
+                      for (let d = 0; d < seedDepth; d++) {
+                          const idxTop = (y0 + d) * width + cx;
+                          if (mask[idxTop] === 0 && matchesAndNotProtected(idxTop)) {
+                              mask[idxTop] = 1;
+                              pushQueue(idxTop);
+                              break;
+                          }
+                      }
+                      for (let d = 0; d < seedDepth; d++) {
+                          const idxBot = (y1 - 1 - d) * width + cx;
+                          if (mask[idxBot] === 0 && matchesAndNotProtected(idxBot)) {
+                              mask[idxBot] = 1;
+                              pushQueue(idxBot);
+                              break;
+                          }
+                      }
+                  }
+
+                  for (let cy = y0; cy < y1; cy++) {
+                      for (let d = 0; d < seedDepth; d++) {
+                          const idxLeft = cy * width + (x0 + d);
+                          if (mask[idxLeft] === 0 && matchesAndNotProtected(idxLeft)) {
+                              mask[idxLeft] = 1;
+                              pushQueue(idxLeft);
+                              break;
+                          }
+                      }
+                      for (let d = 0; d < seedDepth; d++) {
+                          const idxRight = cy * width + (x1 - 1 - d);
+                          if (mask[idxRight] === 0 && matchesAndNotProtected(idxRight)) {
+                              mask[idxRight] = 1;
+                              pushQueue(idxRight);
+                              break;
+                          }
+                      }
+                  }
+
+                  // Local BFS expansion
+                  while (queueStart < queueEnd) {
+                      const currentIdx = queue[queueStart++];
+                      const cx = currentIdx % width;
+                      const cy = Math.floor(currentIdx / width);
+
+                      // Up
+                      if (cy > y0) {
+                          const upIdx = currentIdx - width;
+                          if (mask[upIdx] === 0 && matchesAndNotProtected(upIdx)) {
+                              mask[upIdx] = 1;
+                              pushQueue(upIdx);
+                          }
+                      }
+                      // Down
+                      if (cy < y1 - 1) {
+                          const downIdx = currentIdx + width;
+                          if (mask[downIdx] === 0 && matchesAndNotProtected(downIdx)) {
+                              mask[downIdx] = 1;
+                              pushQueue(downIdx);
+                          }
+                      }
+                      // Left
+                      if (cx > x0) {
+                          const leftIdx = currentIdx - 1;
+                          if (mask[leftIdx] === 0 && matchesAndNotProtected(leftIdx)) {
+                              mask[leftIdx] = 1;
+                              pushQueue(leftIdx);
+                          }
+                      }
+                      // Right
+                      if (cx < x1 - 1) {
+                          const rightIdx = currentIdx + 1;
+                          if (mask[rightIdx] === 0 && matchesAndNotProtected(rightIdx)) {
+                              mask[rightIdx] = 1;
+                              pushQueue(rightIdx);
+                          }
+                      }
+                  }
+              }
+          }
+      } else if (settings.removeContiguousOnly) {
           // Queue-based BFS starting from all 4 boundaries
           let queue = new Uint32Array(262144);
           let queueStart = 0;
@@ -122,35 +248,45 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               return distSq < thresholdSq;
           };
 
-          // Top & Bottom rows
+          const seedDepth = Math.min(3, Math.min(width, height));
+
+          // Top & Bottom rows (check top-down/bottom-up up to seedDepth)
           for (let x = 0; x < width; x++) {
-              // Top row
-              const idxTop = x;
-              if (matchesAndNotProtected(idxTop) && mask[idxTop] === 0) {
-                  mask[idxTop] = 1;
-                  pushQueue(idxTop);
+              for (let d = 0; d < seedDepth; d++) {
+                  const idxTop = d * width + x;
+                  if (matchesAndNotProtected(idxTop) && mask[idxTop] === 0) {
+                      mask[idxTop] = 1;
+                      pushQueue(idxTop);
+                      break;
+                  }
               }
-              // Bottom row
-              const idxBot = (height - 1) * width + x;
-              if (height > 1 && matchesAndNotProtected(idxBot) && mask[idxBot] === 0) {
-                  mask[idxBot] = 1;
-                  pushQueue(idxBot);
+              for (let d = 0; d < seedDepth; d++) {
+                  const idxBot = (height - 1 - d) * width + x;
+                  if (height > d && matchesAndNotProtected(idxBot) && mask[idxBot] === 0) {
+                      mask[idxBot] = 1;
+                      pushQueue(idxBot);
+                      break;
+                  }
               }
           }
 
-          // Left & Right columns (excluding corners already checked)
-          for (let y = 1; y < height - 1; y++) {
-              // Left col
-              const idxLeft = y * width;
-              if (matchesAndNotProtected(idxLeft) && mask[idxLeft] === 0) {
-                  mask[idxLeft] = 1;
-                  pushQueue(idxLeft);
+          // Left & Right columns (check left-to-right/right-to-left up to seedDepth)
+          for (let y = 0; y < height; y++) {
+              for (let d = 0; d < seedDepth; d++) {
+                  const idxLeft = y * width + d;
+                  if (width > d && matchesAndNotProtected(idxLeft) && mask[idxLeft] === 0) {
+                      mask[idxLeft] = 1;
+                      pushQueue(idxLeft);
+                      break;
+                  }
               }
-              // Right col
-              const idxRight = y * width + (width - 1);
-              if (width > 1 && matchesAndNotProtected(idxRight) && mask[idxRight] === 0) {
-                  mask[idxRight] = 1;
-                  pushQueue(idxRight);
+              for (let d = 0; d < seedDepth; d++) {
+                  const idxRight = y * width + (width - 1 - d);
+                  if (width > d && matchesAndNotProtected(idxRight) && mask[idxRight] === 0) {
+                      mask[idxRight] = 1;
+                      pushQueue(idxRight);
+                      break;
+                  }
               }
           }
 

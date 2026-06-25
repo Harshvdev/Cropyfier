@@ -312,6 +312,21 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             <div ref={overlayRef} className="absolute top-0 left-0 z-20 pointer-events-none" style={{ top: 0, left: 0, display: 'none', borderRadius: settings.isRound ? '50%' : '0' }}>
                 {isComplexMode && (<div className="absolute inset-0 transparency-grid opacity-50 z-0" style={{ borderRadius: settings.isRound ? '50%' : '0' }}></div>)}
                 {previewUrl && (<img src={previewUrl} className="w-full h-full relative z-10" style={{ objectFit: 'fill', imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto', borderRadius: settings.isRound ? '50%' : '0' }} alt="Preview" />)}
+                {settings.removeColorActive && settings.removeGridActive && activeTab === 'tune' && (
+                    <div 
+                        className="absolute inset-0 z-20 pointer-events-none grid"
+                        style={{
+                            gridTemplateColumns: `repeat(${Math.max(1, parseInt(settings.removeGridCols) || 1)}, 1fr)`,
+                            gridTemplateRows: `repeat(${Math.max(1, parseInt(settings.removeGridRows) || 1)}, 1fr)`,
+                            border: '1.5px solid rgba(168, 85, 247, 0.75)',
+                            borderRadius: settings.isRound ? '50%' : '0'
+                        }}
+                    >
+                        {Array.from({ length: (Math.max(1, parseInt(settings.removeGridRows) || 1)) * (Math.max(1, parseInt(settings.removeGridCols) || 1)) }).map((_, i) => (
+                            <div key={i} className="border-[0.5px] border-purple-500/40" />
+                        ))}
+                    </div>
+                )}
             </div>
             {isComplexMode && isProcessing && !isInteracting && (
                 <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">

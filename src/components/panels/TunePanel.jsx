@@ -92,6 +92,46 @@ export default function TunePanel({ settings, setSettings, actions }) {
                   </label>
                </div>
 
+               {/* GRID MODE TOGGLE */}
+               <div className="space-y-3 bg-gray-900/50 p-2.5 rounded-lg border border-gray-700/50">
+                  <div className="flex items-center justify-between">
+                     <div className="flex flex-col">
+                        <span className="text-[10px] text-gray-300 font-bold">Grid Mode</span>
+                        <span className="text-[8px] text-gray-500">Remove background inside sprite sheet grids</span>
+                     </div>
+                     <label className="relative inline-flex items-center cursor-pointer">
+                       <input type="checkbox" className="sr-only peer" checked={settings.removeGridActive} onChange={() => update('removeGridActive', !settings.removeGridActive)} />
+                       <div className="w-7 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:bg-purple-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+                     </label>
+                  </div>
+                  {settings.removeGridActive && (
+                     <div className="grid grid-cols-2 gap-2 pt-1 animate-fade-in">
+                        <div>
+                           <label className="text-[8px] font-bold text-gray-400 uppercase block mb-1">Columns</label>
+                           <input 
+                              type="number" 
+                              min="1" 
+                              max="100" 
+                              value={settings.removeGridCols} 
+                              onChange={(e) => update('removeGridCols', Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-full bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-purple-500"
+                           />
+                        </div>
+                        <div>
+                           <label className="text-[8px] font-bold text-gray-400 uppercase block mb-1">Rows</label>
+                           <input 
+                              type="number" 
+                              min="1" 
+                              max="100" 
+                              value={settings.removeGridRows} 
+                              onChange={(e) => update('removeGridRows', Math.max(1, parseInt(e.target.value) || 1))}
+                              className="w-full bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 text-xs focus:outline-none focus:border-purple-500"
+                           />
+                        </div>
+                     </div>
+                  )}
+               </div>
+
                {/* HIGHLIGHT TOGGLE */}
                <div className="flex items-center justify-between bg-gray-900/50 p-2 rounded-lg border border-gray-700/50">
                   <span className="text-[10px] text-gray-300 font-bold">Show Red Highlight</span>

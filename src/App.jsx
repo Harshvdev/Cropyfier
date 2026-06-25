@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = {
   removeColorActive: false, removeColorHex: "#ffffff",
   removeTolerance: 10, removeErosion: 0, 
   removeContiguousOnly: true,
+  removeGridActive: false, removeGridRows: 8, removeGridCols: 8,
   showMaskPreview: true, 
   brushActive: false,
 
