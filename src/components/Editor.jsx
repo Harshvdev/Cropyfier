@@ -12,7 +12,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     const protectionCanvasRef = useRef(null);
 
     const [isDrawing, setIsDrawing] = useState(false);
-    const lastPosRef = useRef({ x: 0, y: 0 }); 
+    const lastPosRef = useRef({ x: 0, y: 0 });
 
     const [previewUrl, setPreviewUrl] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -22,6 +22,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     const generationRef = useRef(0);
     const rafRef = useRef(null);
     const prevSettingsRef = useRef(null);
+    const lastMoveUpdateRef = useRef(0);
 
     useEffect(() => {
         actions.registerCropper(cropperInstanceRef);
@@ -40,7 +41,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         prevSettingsRef.current = settings;
 
         if (prev) {
-            const canvasSettingsChanged = 
+            const canvasSettingsChanged =
                 settings.brightness !== prev.brightness ||
                 settings.contrast !== prev.contrast ||
                 settings.saturation !== prev.saturation ||
@@ -59,6 +60,8 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 settings.removeGridCols !== prev.removeGridCols ||
                 settings.showMaskPreview !== prev.showMaskPreview ||
                 settings.brushActive !== prev.brushActive ||
+                settings.brushVersion !== prev.brushVersion ||
+                settings.showBrushStrokes !== prev.showBrushStrokes ||
                 settings.watermarkText !== prev.watermarkText ||
                 settings.watermarkSize !== prev.watermarkSize ||
                 settings.watermarkOpacity !== prev.watermarkOpacity ||
@@ -76,7 +79,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             if (!canvasSettingsChanged) {
                 if (settings.gridSplitActive) {
                     if (settings.gridSinglePieceView) {
-                        const singlePieceChanged = 
+                        const singlePieceChanged =
                             settings.gridSelectedIndex !== prev.gridSelectedIndex ||
                             settings.gridCols !== prev.gridCols ||
                             settings.gridRows !== prev.gridRows;
@@ -84,7 +87,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                     } else {
                         const isIndividual = settings.gridEditMode === 'individual';
                         const hasAnyOverrides = isIndividual && Object.values(settings.gridPieceSettings || {}).some(p => p && Object.keys(p).length > 0);
-                        const gridDimensionsChanged = 
+                        const gridDimensionsChanged =
                             settings.gridCols !== prev.gridCols ||
                             settings.gridRows !== prev.gridRows;
                         if (!gridDimensionsChanged || !hasAnyOverrides) return;
@@ -152,7 +155,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         e.preventDefault(); e.stopPropagation();
         const canvas = protectionCanvasRef.current;
         if (!canvas) return;
-        
+
         const isEraser = e.altKey || settings.isEraser;
         if (e.altKey && !settings.isEraser) setSettings(prev => ({ ...prev, isEraser: true }));
 
@@ -171,12 +174,22 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const currentPos = getPointerPos(e, canvas);
         paintLine(lastPosRef.current, currentPos, settings.isEraser);
         lastPosRef.current = currentPos;
+
+        // Real-time preview update during drawing (throttled to every 60ms)
+        const now = Date.now();
+        if (now - lastMoveUpdateRef.current > 60) {
+            lastMoveUpdateRef.current = now;
+            setSettings(s => ({ ...s, brushVersion: (s.brushVersion || 0) + 1 }));
+        }
     };
 
     const handlePointerUp = (e) => {
         setIsDrawing(false);
         if (e.altKey && settings.isEraser) setSettings(prev => ({ ...prev, isEraser: false }));
-        if (isBrushActive) { e.target.releasePointerCapture(e.pointerId); generatePreview(); }
+        if (isBrushActive) {
+            e.target.releasePointerCapture(e.pointerId);
+            setSettings(s => ({ ...s, brushVersion: (s.brushVersion || 0) + 1 }));
+        }
     };
 
     const paintLine = (start, end, isEraser = false) => {
@@ -188,9 +201,12 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const scaleX = canvas.width / rect.width;
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         const baseSize = settings.brushSize || 50;
-        ctx.lineWidth = baseSize * scaleX; 
-        if (isEraser) { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = 'rgba(0,0,0,1)'; } 
-        else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)'; }
+        ctx.lineWidth = baseSize * scaleX;
+        if (isEraser) { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = 'rgba(0,0,0,1)'; }
+        else {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = settings.brushMode === 'remove' ? 'rgba(255, 0, 0, 1.0)' : 'rgba(0, 255, 0, 1.0)';
+        }
         ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
     };
 
@@ -218,11 +234,11 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const wrapperRect = wrapper.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
             const wrapperStyle = window.getComputedStyle(wrapper);
-            
+
             // Get wrapper border (to find absolute top/left origin inside border)
             const borderLeft = parseFloat(wrapperStyle.borderLeftWidth) || 0;
             const borderTop = parseFloat(wrapperStyle.borderTopWidth) || 0;
-            
+
             // Origin of the absolute element (top-left of the padding box)
             const absoluteOriginX = wrapperRect.left + borderLeft;
             const absoluteOriginY = wrapperRect.top + borderTop;
@@ -235,7 +251,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const widthPx = `${cropBoxData.width}px`;
             const heightPx = `${cropBoxData.height}px`;
 
-            const naturalScale = imageData.naturalWidth / canvasData.width; 
+            const naturalScale = imageData.naturalWidth / canvasData.width;
             const internalWidth = Math.round(cropBoxData.width * naturalScale);
             const internalHeight = Math.round(cropBoxData.height * naturalScale);
 
@@ -246,13 +262,14 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                 pCanvas.width = internalWidth; pCanvas.height = internalHeight;
             }
             pCanvas.style.width = widthPx; pCanvas.style.height = heightPx; pCanvas.style.transform = transform;
+            pCanvas.style.opacity = settings.showBrushStrokes ? '0.4' : '0';
 
             const shouldShow = (isComplexMode && previewUrl && !isComparing && !isInteracting) || settings.gridSplitActive;
             overlay.style.display = shouldShow ? 'block' : 'none';
             pCanvas.style.display = isBrushActive ? 'block' : 'none';
-            pCanvas.style.zIndex = 50; pCanvas.style.pointerEvents = 'none'; 
+            pCanvas.style.zIndex = 50; pCanvas.style.pointerEvents = 'none';
         });
-    }, [previewUrl, isComparing, isInteracting, settings.isRound, settings.selectedPreset, isComplexMode, isBrushActive, activeTab, settings.gridSplitActive]);
+    }, [previewUrl, isComparing, isInteracting, settings.isRound, settings.selectedPreset, isComplexMode, isBrushActive, activeTab, settings.gridSplitActive, settings.showBrushStrokes]);
 
     useEffect(() => { syncOverlayPosition(); }, [syncOverlayPosition]);
 
@@ -288,8 +305,8 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     useEffect(() => {
         const shouldResetCropBox = activeTab !== 'crop' && activeTab !== 'watermark';
         if (shouldResetCropBox) {
-             const cropper = cropperInstanceRef.current;
-             if (cropper && cropper.canvas) {
+            const cropper = cropperInstanceRef.current;
+            if (cropper && cropper.canvas) {
                 try {
                     const canvasData = cropper.getCanvasData();
                     const cropBoxData = cropper.getCropBoxData();
@@ -299,8 +316,8 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                         cropper.setCropBoxData({ left: canvasData.left, top: canvasData.top, width: canvasData.width, height: canvasData.height });
                         setTimeout(() => syncOverlayPosition(), 0);
                     }
-                } catch(e) {}
-             }
+                } catch (e) { }
+            }
         }
     }, [activeTab, isBrushActive, syncOverlayPosition]);
 
@@ -310,9 +327,9 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const cropper = cropperInstanceRef.current;
         if (!wrapper || !cropper) return;
         const needsCropUI = (activeTab === 'crop' && !settings.gridSplitActive) || activeTab === 'watermark';
-        if (needsCropUI && !isBrushActive) { cropper.enable(); wrapper.classList.remove('cropper-disabled'); } 
+        if (needsCropUI && !isBrushActive) { cropper.enable(); wrapper.classList.remove('cropper-disabled'); }
         else { cropper.disable(); wrapper.classList.add('cropper-disabled'); }
-        if (isComplexMode && !isComparing && !isInteracting) { wrapper.classList.add('complex-mode-active'); } 
+        if (isComplexMode && !isComparing && !isInteracting) { wrapper.classList.add('complex-mode-active'); }
         else { wrapper.classList.remove('complex-mode-active'); }
 
         let targetCursor = 'default';
@@ -368,9 +385,19 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#1f2937 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
             {isBrushActive && (
                 <div className="absolute top-4 left-4 z-50 animate-fade-in pointer-events-none">
-                    <div className="bg-green-600/90 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 border border-green-500/30">
-                        {settings.isEraser || (typeof window !== 'undefined' && window.event && window.event.altKey) ? (<span>🧼 Eraser Active</span>) : (<span>🛡️ Shield Active (Hold Alt to Erase)</span>)}
-                    </div>
+                    {settings.isEraser || (typeof window !== 'undefined' && window.event && window.event.altKey) ? (
+                        <div className="bg-gray-800/95 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 border border-gray-700">
+                            <span>🧼 Stroke Eraser Active</span>
+                        </div>
+                    ) : settings.brushMode === 'remove' ? (
+                        <div className="bg-red-600/90 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 border border-red-500/30">
+                            <span>🧹 Remove Brush Active (Hold Alt to Erase)</span>
+                        </div>
+                    ) : (
+                        <div className="bg-green-600/90 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 border border-green-500/30">
+                            <span>🛡️ Keep Brush Active (Hold Alt to Erase)</span>
+                        </div>
+                    )}
                 </div>
             )}
             <div className="w-full h-full">
@@ -379,14 +406,14 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             <canvas ref={protectionCanvasRef} className="absolute top-0 left-0 z-30 pointer-events-none" style={{ display: 'none' }} />
             <div ref={overlayRef} className="absolute top-0 left-0 z-20 pointer-events-none" style={{ top: 0, left: 0, display: 'none', borderRadius: settings.isRound ? '50%' : '0' }}>
                 {isComplexMode && (<div className="absolute inset-0 transparency-grid opacity-50 z-0" style={{ borderRadius: settings.isRound ? '50%' : '0' }}></div>)}
-                
+
                 {/* IMAGE RENDER */}
                 {settings.gridSplitActive && settings.gridSinglePieceView ? (
                     // Single Piece isolated view
                     <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: settings.isRound ? '50%' : '0' }}>
-                        <img 
-                            src={previewUrl || image} 
-                            className="absolute top-0 left-0" 
+                        <img
+                            src={previewUrl || image}
+                            className="absolute top-0 left-0"
                             style={{
                                 width: `${(Math.max(1, parseInt(settings.gridCols) || 1)) * 100}%`,
                                 height: `${(Math.max(1, parseInt(settings.gridRows) || 1)) * 100}%`,
@@ -395,29 +422,29 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                                 imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
                                 maxWidth: 'none',
                                 maxHeight: 'none',
-                            }} 
-                            alt="Single Piece Preview" 
+                            }}
+                            alt="Single Piece Preview"
                         />
                     </div>
                 ) : (
                     // Standard full-view (can be previewUrl or raw image if previewUrl is null and we are in gridSplit tab)
                     (previewUrl || settings.gridSplitActive) && (
-                        <img 
-                            src={previewUrl || image} 
-                            className="w-full h-full relative z-10" 
-                            style={{ 
-                                objectFit: 'fill', 
-                                imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto', 
-                                borderRadius: settings.isRound ? '50%' : '0' 
-                            }} 
-                            alt="Preview" 
+                        <img
+                            src={previewUrl || image}
+                            className="w-full h-full relative z-10"
+                            style={{
+                                objectFit: 'fill',
+                                imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
+                                borderRadius: settings.isRound ? '50%' : '0'
+                            }}
+                            alt="Preview"
                         />
                     )
                 )}
 
                 {/* Grid splitter interactive overlay */}
                 {settings.gridSplitActive && !settings.gridSinglePieceView && (
-                    <div 
+                    <div
                         className="absolute inset-0 z-25"
                         style={{
                             display: 'grid',
@@ -429,25 +456,17 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
                         {Array.from({ length: (Math.max(1, parseInt(settings.gridRows) || 1)) * (Math.max(1, parseInt(settings.gridCols) || 1)) }).map((_, idx) => {
                             const isSelected = idx === settings.gridSelectedIndex;
                             return (
-                                <div 
+                                <div
                                     key={idx}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setSettings(s => ({ ...s, gridSelectedIndex: idx }));
                                     }}
-                                    className={`border-[0.5px] border-white/30 transition-all cursor-pointer flex items-center justify-center relative pointer-events-auto ${
-                                        isSelected 
-                                        ? 'bg-blue-500/20 border-2 border-blue-400 z-10 shadow-[0_0_15px_rgba(59,130,246,0.6)]' 
-                                        : 'hover:bg-white/10'
-                                    }`}
+                                    className={`border-[0.5px] border-white/30 transition-all cursor-pointer flex items-center justify-center relative pointer-events-auto ${isSelected
+                                            ? 'bg-blue-500/20 border-2 border-blue-400 z-10 shadow-[0_0_15px_rgba(59,130,246,0.6)]'
+                                            : 'hover:bg-white/10'
+                                        }`}
                                 >
-                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shadow ${
-                                        isSelected 
-                                        ? 'bg-blue-500 text-white' 
-                                        : 'bg-black/60 text-white/80'
-                                    }`}>
-                                        {idx + 1}
-                                    </span>
                                 </div>
                             );
                         })}
@@ -456,7 +475,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
                 {/* Visual Grid Mode overlay in Tune tab */}
                 {settings.removeColorActive && settings.removeGridActive && activeTab === 'tune' && (
-                    <div 
+                    <div
                         className="absolute inset-0 z-20 pointer-events-none grid"
                         style={{
                             gridTemplateColumns: `repeat(${Math.max(1, parseInt(settings.removeGridCols) || 1)}, 1fr)`,

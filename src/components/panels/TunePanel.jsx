@@ -141,24 +141,77 @@ export default function TunePanel({ settings, setSettings, actions }) {
                   </label>
                </div>
 
-               {/* PROTECTION BRUSH */}
-               <button 
-                   type="button"
-                   onClick={() => update('brushActive', !settings.brushActive)}
-                   className={`w-full py-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition border ${
-                       settings.brushActive 
-                       ? "bg-green-600 border-green-500 text-white shadow-lg shadow-green-500/20" 
-                       : "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700"
-                   }`}
-               >
-                   <span>{settings.brushActive ? "🛑 Stop Protecting" : "🛡️ Protect Area (Brush)"}</span>
-               </button>
+                {/* MAGIC BRUSH CONTROL */}
+                <div className="space-y-4 pt-2 border-t border-purple-950/20">
+                    <label className="text-[9px] font-black text-purple-300 uppercase block tracking-wider">Magic Brush</label>
+                    <div className="flex bg-gray-900/80 p-0.5 rounded-xl border border-gray-800">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSettings(s => ({ ...s, brushActive: false }));
+                            }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${
+                                !settings.brushActive
+                                ? 'bg-gray-700 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-gray-200'
+                            }`}
+                        >
+                            Off
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSettings(s => ({ ...s, brushActive: true, brushMode: 'protect' }));
+                            }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                settings.brushActive && settings.brushMode === 'protect'
+                                ? 'bg-green-600 text-white shadow-md'
+                                : 'text-gray-400 hover:text-gray-200'
+                            }`}
+                        >
+                            <span className="text-[11px]">🛡️</span> Keep
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSettings(s => ({ ...s, brushActive: true, brushMode: 'remove' }));
+                            }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                settings.brushActive && settings.brushMode === 'remove'
+                                ? 'bg-red-600 text-white shadow-md'
+                                : 'text-gray-400 hover:text-gray-200'
+                            }`}
+                        >
+                            <span className="text-[11px]">🧹</span> Remove
+                        </button>
+                    </div>
 
-               <p className="text-[9px] text-gray-400 leading-relaxed">
-                  1. Areas in <strong>Red</strong> will be removed.<br/>
-                  2. Use <strong>Protect Area</strong> to draw over parts you want to keep.<br/>
-                  3. Click <strong>Save Step</strong> at the top to apply changes.
-               </p>
+                    {settings.brushActive && (
+                        <div className="space-y-3 animate-fade-in">
+                            <Slider 
+                                label="Brush Size" 
+                                value={settings.brushSize || 30} 
+                                min={1} 
+                                max={150} 
+                                onChange={(v) => update('brushSize', v)} 
+                                unit="px"
+                            />
+                            <div className="flex items-center justify-between bg-gray-900/50 p-2 rounded-lg border border-gray-700/50 mt-1">
+                               <span className="text-[10px] text-gray-300 font-bold">Show Brush Strokes</span>
+                               <label className="relative inline-flex items-center cursor-pointer">
+                                 <input type="checkbox" className="sr-only peer" checked={settings.showBrushStrokes} onChange={() => update('showBrushStrokes', !settings.showBrushStrokes)} />
+                                 <div className="w-7 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:bg-purple-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+                               </label>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <p className="text-[9px] text-gray-400 leading-relaxed border-t border-purple-950/20 pt-3">
+                   1. Select <strong>Keep</strong> to paint green over areas you want to protect.<br/>
+                   2. Select <strong>Remove</strong> to paint red over background parts that were missed.<br/>
+                   3. Hold <strong>Alt</strong> while painting to erase brush strokes.
+                </p>
             </div>
          )}
       </div>
