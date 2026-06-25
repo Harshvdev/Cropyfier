@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   // Magic Eraser
   removeColorActive: false, removeColorHex: "#ffffff",
   removeTolerance: 10, removeErosion: 0, 
+  removeContiguousOnly: true,
   showMaskPreview: true, 
   brushActive: false,
 

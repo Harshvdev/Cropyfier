@@ -46,3 +46,7 @@ dist
 .DS_Store
 Thumbs.db
 all
+
+# Local
+/notebook
+notebook.*

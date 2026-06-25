@@ -95,23 +95,124 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      const tPct = settings.removeTolerance / 100;
      const thresholdSq = tPct * tPct * MAX_DIST_SQ;
 
-     // 5c. PASS 1: Identification
-     for (let i = 0; i < width * height; i++) {
-         const idx = i * 4;
+      // 5c. PASS 1: Identification
+      if (settings.removeContiguousOnly) {
+          // Queue-based BFS starting from all 4 boundaries
+          let queue = new Uint32Array(262144);
+          let queueStart = 0;
+          let queueEnd = 0;
 
-         // Check Protection - Explicitly mark as 0 (Keep)
-         if (protectionData && protectionData[idx+3] > 0) {
-             mask[i] = 0; 
-             continue;
-         }
+          const pushQueue = (idx) => {
+              if (queueEnd >= queue.length) {
+                  const newQueue = new Uint32Array(queue.length * 2);
+                  newQueue.set(queue);
+                  queue = newQueue;
+              }
+              queue[queueEnd++] = idx;
+          };
 
-         const r = data[idx], g = data[idx+1], b = data[idx+2];
-         const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+          const matchesAndNotProtected = (idx) => {
+              if (protectionData && protectionData[idx * 4 + 3] > 0) {
+                  return false;
+              }
+              const r = data[idx * 4];
+              const g = data[idx * 4 + 1];
+              const b = data[idx * 4 + 2];
+              const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+              return distSq < thresholdSq;
+          };
 
-         if (distSq < thresholdSq) {
-             mask[i] = 1; // Mark for removal
-         }
-     }
+          // Top & Bottom rows
+          for (let x = 0; x < width; x++) {
+              // Top row
+              const idxTop = x;
+              if (matchesAndNotProtected(idxTop) && mask[idxTop] === 0) {
+                  mask[idxTop] = 1;
+                  pushQueue(idxTop);
+              }
+              // Bottom row
+              const idxBot = (height - 1) * width + x;
+              if (height > 1 && matchesAndNotProtected(idxBot) && mask[idxBot] === 0) {
+                  mask[idxBot] = 1;
+                  pushQueue(idxBot);
+              }
+          }
+
+          // Left & Right columns (excluding corners already checked)
+          for (let y = 1; y < height - 1; y++) {
+              // Left col
+              const idxLeft = y * width;
+              if (matchesAndNotProtected(idxLeft) && mask[idxLeft] === 0) {
+                  mask[idxLeft] = 1;
+                  pushQueue(idxLeft);
+              }
+              // Right col
+              const idxRight = y * width + (width - 1);
+              if (width > 1 && matchesAndNotProtected(idxRight) && mask[idxRight] === 0) {
+                  mask[idxRight] = 1;
+                  pushQueue(idxRight);
+              }
+          }
+
+          // BFS expansion
+          while (queueStart < queueEnd) {
+              const currentIdx = queue[queueStart++];
+              const cx = currentIdx % width;
+              const cy = Math.floor(currentIdx / width);
+
+              // 4-connectivity: check neighbors
+              // Up
+              if (cy > 0) {
+                  const upIdx = currentIdx - width;
+                  if (mask[upIdx] === 0 && matchesAndNotProtected(upIdx)) {
+                      mask[upIdx] = 1;
+                      pushQueue(upIdx);
+                  }
+              }
+              // Down
+              if (cy < height - 1) {
+                  const downIdx = currentIdx + width;
+                  if (mask[downIdx] === 0 && matchesAndNotProtected(downIdx)) {
+                      mask[downIdx] = 1;
+                      pushQueue(downIdx);
+                  }
+              }
+              // Left
+              if (cx > 0) {
+                  const leftIdx = currentIdx - 1;
+                  if (mask[leftIdx] === 0 && matchesAndNotProtected(leftIdx)) {
+                      mask[leftIdx] = 1;
+                      pushQueue(leftIdx);
+                  }
+              }
+              // Right
+              if (cx < width - 1) {
+                  const rightIdx = currentIdx + 1;
+                  if (mask[rightIdx] === 0 && matchesAndNotProtected(rightIdx)) {
+                      mask[rightIdx] = 1;
+                      pushQueue(rightIdx);
+                  }
+              }
+          }
+      } else {
+          // Global color removal
+          for (let i = 0; i < width * height; i++) {
+              const idx = i * 4;
+
+              // Check Protection - Explicitly mark as 0 (Keep)
+              if (protectionData && protectionData[idx+3] > 0) {
+                  mask[i] = 0; 
+                  continue;
+              }
+
+              const r = data[idx], g = data[idx+1], b = data[idx+2];
+              const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+
+              if (distSq < thresholdSq) {
+                  mask[i] = 1; // Mark for removal
+              }
+          }
+      }
 
      // 5d. PASS 2: EXPAND EDGES (Optimized - No internal allocation)
      if (settings.removeErosion > 0) {

@@ -80,6 +80,18 @@ export default function TunePanel({ settings, setSettings, actions }) {
                   unit="px"
                />
                
+               {/* CONTIGUOUS TOGGLE */}
+               <div className="flex items-center justify-between bg-gray-900/50 p-2 rounded-lg border border-gray-700/50">
+                  <div className="flex flex-col">
+                     <span className="text-[10px] text-gray-300 font-bold">Contiguous Only</span>
+                     <span className="text-[8px] text-gray-500">Only remove background connected to edges</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={settings.removeContiguousOnly} onChange={() => update('removeContiguousOnly', !settings.removeContiguousOnly)} />
+                    <div className="w-7 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:bg-purple-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all"></div>
+                  </label>
+               </div>
+
                {/* HIGHLIGHT TOGGLE */}
                <div className="flex items-center justify-between bg-gray-900/50 p-2 rounded-lg border border-gray-700/50">
                   <span className="text-[10px] text-gray-300 font-bold">Show Red Highlight</span>
