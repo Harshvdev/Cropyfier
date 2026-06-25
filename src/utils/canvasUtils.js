@@ -6,7 +6,7 @@ export const getFilterString = (settings) => {
   return `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 };
 
-export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
+export const generateCanvas = (cropper, settings, protectionCanvas = null, isPreview = false) => {
   if (!cropper) return null;
 
   // 1. Setup Options
@@ -44,6 +44,24 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
     options.height = Math.min(Math.round(h), MAX_CANVAS_SIZE);
   }
 
+  // 2b. Preview Size Capping (Crucial for high performance on big images)
+  if (isPreview) {
+    const maxPreviewSize = 1024;
+    const data = cropper.getData();
+    let w = options.width || data.width;
+    let h = options.height || data.height;
+    if (w > maxPreviewSize || h > maxPreviewSize) {
+      const ratio = w / h;
+      if (w > h) {
+        options.width = maxPreviewSize;
+        options.height = Math.round(maxPreviewSize / ratio);
+      } else {
+        options.height = maxPreviewSize;
+        options.width = Math.round(maxPreviewSize * ratio);
+      }
+    }
+  }
+
   // 3. Get Base Image
   const rawCanvas = cropper.getCroppedCanvas(options);
   if (!rawCanvas) return null;
@@ -76,12 +94,19 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      // 5a. Prepare Protection Mask
      let protectionData = null;
      if (protectionCanvas) {
-        const pTemp = document.createElement('canvas');
-        pTemp.width = width;
-        pTemp.height = height;
-        const pCtx = pTemp.getContext('2d', { willReadFrequently: true });
-        pCtx.drawImage(protectionCanvas, 0, 0, width, height);
-        protectionData = pCtx.getImageData(0, 0, width, height).data;
+        if (protectionCanvas.width === width && protectionCanvas.height === height) {
+           // Skip temp canvas if dimensions match exactly
+           const pCtx = protectionCanvas.getContext('2d', { willReadFrequently: true });
+           protectionData = pCtx.getImageData(0, 0, width, height).data;
+        } else {
+           // Fall back to scale-rendering on temp canvas if dimensions differ
+           const pTemp = document.createElement('canvas');
+           pTemp.width = width;
+           pTemp.height = height;
+           const pCtx = pTemp.getContext('2d', { willReadFrequently: true });
+           pCtx.drawImage(protectionCanvas, 0, 0, width, height);
+           protectionData = pCtx.getImageData(0, 0, width, height).data;
+        }
      }
 
      // 5b. Parse Target Color
@@ -96,6 +121,23 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
      const thresholdSq = tPct * tPct * MAX_DIST_SQ;
 
       // 5c. PASS 1: Identification
+      // Pre-compute matches and protection for all pixels in a single fast linear pass
+      const colorMatch = new Uint8Array(width * height);
+      for (let i = 0; i < width * height; i++) {
+          const idx = i * 4;
+          if (protectionData && protectionData[idx + 3] > 0) {
+              continue; // 0 (Keep)
+          }
+          const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+          const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
+          if (distSq < thresholdSq) {
+              colorMatch[i] = 1; // 1 (Matches/Remove)
+          }
+      }
+
+      // Pre-allocate a single queue to reuse across all cells and operations
+      let queue = new Uint32Array(Math.min(width * height, 1048576));
+
       if (settings.removeColorActive && settings.removeGridActive) {
           const rows = Math.max(1, parseInt(settings.removeGridRows) || 1);
           const cols = Math.max(1, parseInt(settings.removeGridCols) || 1);
@@ -111,7 +153,6 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                   const cellH = y1 - y0;
                   if (cellW <= 0 || cellH <= 0) continue;
 
-                  let queue = new Uint32Array(Math.min(cellW * cellH, 65536));
                   let queueStart = 0;
                   let queueEnd = 0;
 
@@ -124,37 +165,23 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                       queue[queueEnd++] = idx;
                   };
 
-                  const matchesAndNotProtected = (idx) => {
-                      if (protectionData && protectionData[idx * 4 + 3] > 0) {
-                          return false;
-                      }
-                      const px = idx % width;
-                      const py = Math.floor(idx / width);
-                      if (px < x0 || px >= x1 || py < y0 || py >= y1) {
-                          return false;
-                      }
-                      const rVal = data[idx * 4];
-                      const gVal = data[idx * 4 + 1];
-                      const bVal = data[idx * 4 + 2];
-                      const distSq = (rVal - rT)**2 + (gVal - gT)**2 + (bVal - bT)**2;
-                      return distSq < thresholdSq;
-                  };
-
                   const seedDepth = Math.min(3, Math.min(cellW, cellH));
 
                   // Seed from local cell boundaries
                   for (let cx = x0; cx < x1; cx++) {
+                      // Top edge of cell
                       for (let d = 0; d < seedDepth; d++) {
                           const idxTop = (y0 + d) * width + cx;
-                          if (mask[idxTop] === 0 && matchesAndNotProtected(idxTop)) {
+                          if (mask[idxTop] === 0 && colorMatch[idxTop] === 1) {
                               mask[idxTop] = 1;
                               pushQueue(idxTop);
                               break;
                           }
                       }
+                      // Bottom edge of cell
                       for (let d = 0; d < seedDepth; d++) {
                           const idxBot = (y1 - 1 - d) * width + cx;
-                          if (mask[idxBot] === 0 && matchesAndNotProtected(idxBot)) {
+                          if (mask[idxBot] === 0 && colorMatch[idxBot] === 1) {
                               mask[idxBot] = 1;
                               pushQueue(idxBot);
                               break;
@@ -163,17 +190,19 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                   }
 
                   for (let cy = y0; cy < y1; cy++) {
+                      // Left edge of cell
                       for (let d = 0; d < seedDepth; d++) {
                           const idxLeft = cy * width + (x0 + d);
-                          if (mask[idxLeft] === 0 && matchesAndNotProtected(idxLeft)) {
+                          if (mask[idxLeft] === 0 && colorMatch[idxLeft] === 1) {
                               mask[idxLeft] = 1;
                               pushQueue(idxLeft);
                               break;
                           }
                       }
+                      // Right edge of cell
                       for (let d = 0; d < seedDepth; d++) {
                           const idxRight = cy * width + (x1 - 1 - d);
-                          if (mask[idxRight] === 0 && matchesAndNotProtected(idxRight)) {
+                          if (mask[idxRight] === 0 && colorMatch[idxRight] === 1) {
                               mask[idxRight] = 1;
                               pushQueue(idxRight);
                               break;
@@ -190,7 +219,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                       // Up
                       if (cy > y0) {
                           const upIdx = currentIdx - width;
-                          if (mask[upIdx] === 0 && matchesAndNotProtected(upIdx)) {
+                          if (mask[upIdx] === 0 && colorMatch[upIdx] === 1) {
                               mask[upIdx] = 1;
                               pushQueue(upIdx);
                           }
@@ -198,7 +227,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                       // Down
                       if (cy < y1 - 1) {
                           const downIdx = currentIdx + width;
-                          if (mask[downIdx] === 0 && matchesAndNotProtected(downIdx)) {
+                          if (mask[downIdx] === 0 && colorMatch[downIdx] === 1) {
                               mask[downIdx] = 1;
                               pushQueue(downIdx);
                           }
@@ -206,7 +235,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                       // Left
                       if (cx > x0) {
                           const leftIdx = currentIdx - 1;
-                          if (mask[leftIdx] === 0 && matchesAndNotProtected(leftIdx)) {
+                          if (mask[leftIdx] === 0 && colorMatch[leftIdx] === 1) {
                               mask[leftIdx] = 1;
                               pushQueue(leftIdx);
                           }
@@ -214,7 +243,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
                       // Right
                       if (cx < x1 - 1) {
                           const rightIdx = currentIdx + 1;
-                          if (mask[rightIdx] === 0 && matchesAndNotProtected(rightIdx)) {
+                          if (mask[rightIdx] === 0 && colorMatch[rightIdx] === 1) {
                               mask[rightIdx] = 1;
                               pushQueue(rightIdx);
                           }
@@ -223,8 +252,6 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               }
           }
       } else if (settings.removeContiguousOnly) {
-          // Queue-based BFS starting from all 4 boundaries
-          let queue = new Uint32Array(262144);
           let queueStart = 0;
           let queueEnd = 0;
 
@@ -237,24 +264,13 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               queue[queueEnd++] = idx;
           };
 
-          const matchesAndNotProtected = (idx) => {
-              if (protectionData && protectionData[idx * 4 + 3] > 0) {
-                  return false;
-              }
-              const r = data[idx * 4];
-              const g = data[idx * 4 + 1];
-              const b = data[idx * 4 + 2];
-              const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
-              return distSq < thresholdSq;
-          };
-
           const seedDepth = Math.min(3, Math.min(width, height));
 
-          // Top & Bottom rows (check top-down/bottom-up up to seedDepth)
+          // Top & Bottom rows
           for (let x = 0; x < width; x++) {
               for (let d = 0; d < seedDepth; d++) {
                   const idxTop = d * width + x;
-                  if (matchesAndNotProtected(idxTop) && mask[idxTop] === 0) {
+                  if (colorMatch[idxTop] === 1 && mask[idxTop] === 0) {
                       mask[idxTop] = 1;
                       pushQueue(idxTop);
                       break;
@@ -262,7 +278,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               }
               for (let d = 0; d < seedDepth; d++) {
                   const idxBot = (height - 1 - d) * width + x;
-                  if (height > d && matchesAndNotProtected(idxBot) && mask[idxBot] === 0) {
+                  if (height > d && colorMatch[idxBot] === 1 && mask[idxBot] === 0) {
                       mask[idxBot] = 1;
                       pushQueue(idxBot);
                       break;
@@ -270,11 +286,11 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               }
           }
 
-          // Left & Right columns (check left-to-right/right-to-left up to seedDepth)
+          // Left & Right columns
           for (let y = 0; y < height; y++) {
               for (let d = 0; d < seedDepth; d++) {
                   const idxLeft = y * width + d;
-                  if (width > d && matchesAndNotProtected(idxLeft) && mask[idxLeft] === 0) {
+                  if (width > d && colorMatch[idxLeft] === 1 && mask[idxLeft] === 0) {
                       mask[idxLeft] = 1;
                       pushQueue(idxLeft);
                       break;
@@ -282,7 +298,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               }
               for (let d = 0; d < seedDepth; d++) {
                   const idxRight = y * width + (width - 1 - d);
-                  if (width > d && matchesAndNotProtected(idxRight) && mask[idxRight] === 0) {
+                  if (width > d && colorMatch[idxRight] === 1 && mask[idxRight] === 0) {
                       mask[idxRight] = 1;
                       pushQueue(idxRight);
                       break;
@@ -296,11 +312,10 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               const cx = currentIdx % width;
               const cy = Math.floor(currentIdx / width);
 
-              // 4-connectivity: check neighbors
               // Up
               if (cy > 0) {
                   const upIdx = currentIdx - width;
-                  if (mask[upIdx] === 0 && matchesAndNotProtected(upIdx)) {
+                  if (mask[upIdx] === 0 && colorMatch[upIdx] === 1) {
                       mask[upIdx] = 1;
                       pushQueue(upIdx);
                   }
@@ -308,7 +323,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               // Down
               if (cy < height - 1) {
                   const downIdx = currentIdx + width;
-                  if (mask[downIdx] === 0 && matchesAndNotProtected(downIdx)) {
+                  if (mask[downIdx] === 0 && colorMatch[downIdx] === 1) {
                       mask[downIdx] = 1;
                       pushQueue(downIdx);
                   }
@@ -316,7 +331,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               // Left
               if (cx > 0) {
                   const leftIdx = currentIdx - 1;
-                  if (mask[leftIdx] === 0 && matchesAndNotProtected(leftIdx)) {
+                  if (mask[leftIdx] === 0 && colorMatch[leftIdx] === 1) {
                       mask[leftIdx] = 1;
                       pushQueue(leftIdx);
                   }
@@ -324,30 +339,15 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null) => {
               // Right
               if (cx < width - 1) {
                   const rightIdx = currentIdx + 1;
-                  if (mask[rightIdx] === 0 && matchesAndNotProtected(rightIdx)) {
+                  if (mask[rightIdx] === 0 && colorMatch[rightIdx] === 1) {
                       mask[rightIdx] = 1;
                       pushQueue(rightIdx);
                   }
               }
           }
       } else {
-          // Global color removal
-          for (let i = 0; i < width * height; i++) {
-              const idx = i * 4;
-
-              // Check Protection - Explicitly mark as 0 (Keep)
-              if (protectionData && protectionData[idx+3] > 0) {
-                  mask[i] = 0; 
-                  continue;
-              }
-
-              const r = data[idx], g = data[idx+1], b = data[idx+2];
-              const distSq = (r - rT)**2 + (g - gT)**2 + (b - bT)**2;
-
-              if (distSq < thresholdSq) {
-                  mask[i] = 1; // Mark for removal
-              }
-          }
+          // Global mode: copy pre-computed color matches directly to mask
+          mask.set(colorMatch);
       }
 
      // 5d. PASS 2: EXPAND EDGES (Optimized - No internal allocation)

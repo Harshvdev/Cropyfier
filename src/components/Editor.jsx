@@ -43,7 +43,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const cropper = cropperInstanceRef.current;
             if (!cropper || !cropper.canvas) return;
 
-            const canvas = generateCanvas(cropper, settings, protectionCanvasRef.current);
+            const canvas = generateCanvas(cropper, settings, protectionCanvasRef.current, true);
 
             if (canvas) {
                 canvas.toBlob((blob) => {
@@ -67,6 +67,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     useEffect(() => {
         generatePreview();
         return () => {
+            generationRef.current = -1; // Invalidate pending toBlob callbacks
             setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
         };
     }, [generatePreview]);
