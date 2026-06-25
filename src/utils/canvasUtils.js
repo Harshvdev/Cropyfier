@@ -6,8 +6,60 @@ export const getFilterString = (settings) => {
   return `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) grayscale(${settings.grayscale}%) sepia(${settings.sepia}%) invert(${settings.invert}%) hue-rotate(${settings.hue}deg) blur(${settings.blur}px)`;
 };
 
-export const generateCanvas = (cropper, settings, protectionCanvas = null, isPreview = false) => {
+export const generateCanvas = (cropper, settings, protectionCanvas = null, isPreview = false, isSubCellRender = false) => {
   if (!cropper) return null;
+
+  if (settings.gridSplitActive && !isSubCellRender) {
+      const cols = Math.max(1, settings.gridCols || 1);
+      const rows = Math.max(1, settings.gridRows || 1);
+      const totalCells = cols * rows;
+
+      const isIndividual = settings.gridEditMode === 'individual';
+      const hasAnyOverrides = isIndividual && Object.values(settings.gridPieceSettings || {}).some(p => p && Object.keys(p).length > 0);
+
+      // Optimization 1: If no individual overrides exist at all, just render a single baseline canvas
+      if (!hasAnyOverrides) {
+          const dummySettings = { ...settings, gridSplitActive: false };
+          return generateCanvas(cropper, dummySettings, protectionCanvas, isPreview, true);
+      }
+
+      const dummySettings = { ...settings, gridSplitActive: false };
+      const dummyCanvas = generateCanvas(cropper, dummySettings, protectionCanvas, isPreview, true);
+      if (!dummyCanvas) return null;
+
+      const W = dummyCanvas.width;
+      const H = dummyCanvas.height;
+      const cellW = W / cols;
+      const cellH = H / rows;
+
+      const stitchCanvas = document.createElement("canvas");
+      stitchCanvas.width = W;
+      stitchCanvas.height = H;
+      const stitchCtx = stitchCanvas.getContext("2d");
+
+      for (let i = 0; i < totalCells; i++) {
+          const row = Math.floor(i / cols);
+          const col = i % cols;
+          
+          const piece = settings.gridPieceSettings?.[i];
+          const hasOverrides = isIndividual && piece && Object.keys(piece).length > 0;
+
+          // Optimization 2: Only render specific cells that have overrides. Copy directly from baseline for others.
+          if (hasOverrides) {
+              const cellCanvas = getGridPieceCanvas(cropper, settings, i, protectionCanvas, true);
+              if (cellCanvas) {
+                  stitchCtx.drawImage(cellCanvas, col * cellW, row * cellH);
+              }
+          } else {
+              stitchCtx.drawImage(
+                  dummyCanvas,
+                  col * cellW, row * cellH, cellW, cellH,
+                  col * cellW, row * cellH, cellW, cellH
+              );
+          }
+      }
+      return stitchCanvas;
+  }
 
   // 1. Setup Options
   const needsTransparency = settings.removeColorActive || settings.isRound || settings.format === "image/png" || settings.format === "image/webp";
@@ -457,4 +509,38 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
   }
   
   return filterCanvas;
+};
+
+export const getGridPieceCanvas = (cropper, settings, index, protectionCanvas = null, isSubCellRender = false) => {
+  if (!cropper) return null;
+
+  const cols = Math.max(1, settings.gridCols || 1);
+  const rows = Math.max(1, settings.gridRows || 1);
+  const row = Math.floor(index / cols);
+  const col = index % cols;
+
+  const isIndividual = settings.gridEditMode === 'individual';
+  const pieceOverrides = isIndividual ? (settings.gridPieceSettings[index] || {}) : {};
+  const cellSettings = isIndividual 
+    ? { ...settings, ...settings.globalSettingsBackup, ...pieceOverrides }
+    : { ...settings };
+
+  const fullCanvas = generateCanvas(cropper, { ...cellSettings, showMaskPreview: false }, protectionCanvas, false, true);
+  if (!fullCanvas) return null;
+
+  const cellW = fullCanvas.width / cols;
+  const cellH = fullCanvas.height / rows;
+
+  const cellCanvas = document.createElement('canvas');
+  cellCanvas.width = cellW;
+  cellCanvas.height = cellH;
+  const cellCtx = cellCanvas.getContext('2d');
+
+  cellCtx.drawImage(
+      fullCanvas,
+      col * cellW, row * cellH, cellW, cellH,
+      0, 0, cellW, cellH
+  );
+
+  return cellCanvas;
 };

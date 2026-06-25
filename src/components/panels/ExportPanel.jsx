@@ -35,6 +35,26 @@ export default function ExportPanel({ settings, setSettings, actions }) {
 
       {/* 4. MAIN ACTION BUTTONS */}
       <div className="pt-4 border-t border-white/5 space-y-3">
+         {settings.gridSplitActive && (
+             <div className="space-y-2.5 pb-2 border-b border-white/5">
+                 <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1 tracking-wider">Grid Split Exports</label>
+                 <button
+                    type="button"
+                    onClick={actions.downloadActivePiece}
+                    className="w-full py-3.5 bg-blue-600/20 border border-blue-500/40 text-blue-400 hover:bg-blue-650 font-bold rounded-xl transition active:scale-[0.98] flex items-center justify-center gap-2 text-xs"
+                 >
+                    📥 Download Active Piece
+                 </button>
+                 <button
+                    type="button"
+                    onClick={actions.downloadAllPieces}
+                    className="w-full py-3.5 bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 font-bold rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] text-xs"
+                 >
+                    🗂️ Download All Pieces ({Math.max(1, settings.gridCols || 1) * Math.max(1, settings.gridRows || 1)})
+                 </button>
+             </div>
+         )}
+
          <button 
             type="button" 
             onClick={actions.download} 

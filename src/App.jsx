@@ -1,12 +1,12 @@
 // src/App.jsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Header from "./components/Header";
 import UploadArea from "./components/UploadArea";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import useDragDrop from "./hooks/useDragDrop";
 import useHistory from "./hooks/useHistory";
-import { generateCanvas } from "./utils/canvasUtils";
+import { generateCanvas, getGridPieceCanvas } from "./utils/canvasUtils";
 
 const DEFAULT_SETTINGS = {
   // Geometry
@@ -35,12 +35,130 @@ const DEFAULT_SETTINGS = {
   watermarkText: "", watermarkSize: 40,
   watermarkOpacity: 0.8, watermarkColor: "#ffffff",
   watermarkPos: "Center", 
+
+  // Grid Crop (Split)
+  gridSplitActive: false,
+  gridCols: 3, gridRows: 3,
+  gridSelectedIndex: 0, gridSinglePieceView: false,
+  gridEditMode: "all",
+  gridPieceSettings: {},
+  globalSettingsBackup: {
+      brightness: 100, contrast: 100, saturation: 100,
+      grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
+      removeColorActive: false, removeColorHex: "#ffffff",
+      removeTolerance: 10, removeErosion: 0, 
+      removeContiguousOnly: true,
+      removeGridActive: false, removeGridRows: 8, removeGridCols: 8,
+      showMaskPreview: true, 
+      brushActive: false,
+      watermarkText: "", watermarkSize: 40,
+      watermarkOpacity: 0.8, watermarkColor: "#ffffff",
+      watermarkPos: "Center", 
+  }
 };
 
 function App() {
   const { state: imageState, pushState: pushHistory, undo, redo, canUndo, canRedo, resetHistory } = useHistory(null);
   const [displayUrl, setDisplayUrl] = useState(null); // URL for the Editor
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, rawSetSettings] = useState(DEFAULT_SETTINGS);
+
+  const setSettings = useCallback((updater) => {
+      rawSetSettings(prev => {
+          let next = typeof updater === 'function' ? updater(prev) : updater;
+          
+          const selectionChanged = next.gridSelectedIndex !== prev.gridSelectedIndex;
+          const modeChanged = next.gridEditMode !== prev.gridEditMode;
+          const activeChanged = next.gridSplitActive !== prev.gridSplitActive;
+          
+          if (selectionChanged || modeChanged || activeChanged) {
+              if (next.gridSplitActive && next.gridEditMode === 'individual') {
+                  const idx = next.gridSelectedIndex;
+                  const pieceOverrides = next.gridPieceSettings[idx] || {};
+                  
+                  const cleanAdjustments = {
+                      brightness: 100, contrast: 100, saturation: 100, grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
+                      removeColorActive: false, removeColorHex: "#ffffff", removeTolerance: 10, removeErosion: 0, removeContiguousOnly: true, removeGridActive: false, removeGridRows: 8, removeGridCols: 8, showMaskPreview: true, brushActive: false,
+                      watermarkText: "", watermarkSize: 40, watermarkOpacity: 0.8, watermarkColor: "#ffffff", watermarkPos: "Center"
+                  };
+                  
+                  next = {
+                      ...next,
+                      ...cleanAdjustments,
+                      ...pieceOverrides
+                  };
+              } else {
+                  next = {
+                      ...next,
+                      ...prev.globalSettingsBackup
+                  };
+              }
+          }
+          
+          if (next.gridSplitActive && next.gridEditMode === 'individual') {
+              const idx = next.gridSelectedIndex;
+              const currentPieceSettings = next.gridPieceSettings[idx] || {};
+              
+              const nonOverrideKeys = [
+                  'gridSplitActive', 'gridCols', 'gridRows', 'gridSelectedIndex', 
+                  'gridEditMode', 'gridSinglePieceView', 'gridPieceSettings', 'globalSettingsBackup',
+                  'scaleX', 'scaleY', 'rotation', 'customWidth', 'customHeight', 
+                  'lockAspectRatio', 'isRound', 'aspectRatio', 'selectedPreset', 
+                  'format', 'quality', 'unit', 'dpi', 'interpolation'
+              ];
+              
+              const updatedPieceSettings = { ...currentPieceSettings };
+              let hasChanges = false;
+              
+              Object.keys(next).forEach(key => {
+                  if (!nonOverrideKeys.includes(key)) {
+                      if (next[key] !== prev[key]) {
+                          updatedPieceSettings[key] = next[key];
+                          hasChanges = true;
+                      }
+                  }
+              });
+              
+              if (hasChanges) {
+                  next = {
+                      ...next,
+                      gridPieceSettings: {
+                          ...next.gridPieceSettings,
+                          [idx]: updatedPieceSettings
+                      }
+                  };
+              }
+          } else {
+              const nonOverrideKeys = [
+                  'gridSplitActive', 'gridCols', 'gridRows', 'gridSelectedIndex', 
+                  'gridEditMode', 'gridSinglePieceView', 'gridPieceSettings', 'globalSettingsBackup',
+                  'scaleX', 'scaleY', 'rotation', 'customWidth', 'customHeight', 
+                  'lockAspectRatio', 'isRound', 'aspectRatio', 'selectedPreset', 
+                  'format', 'quality', 'unit', 'dpi', 'interpolation'
+              ];
+              
+              const updatedBackup = { ...prev.globalSettingsBackup };
+              let backupChanged = false;
+              
+              Object.keys(next).forEach(key => {
+                  if (!nonOverrideKeys.includes(key)) {
+                      if (next[key] !== prev[key]) {
+                          updatedBackup[key] = next[key];
+                          backupChanged = true;
+                      }
+                  }
+              });
+              
+              if (backupChanged) {
+                  next = {
+                      ...next,
+                      globalSettingsBackup: updatedBackup
+                  };
+              }
+          }
+          
+          return next;
+      });
+  }, [rawSetSettings]);
   const [isPicking, setIsPicking] = useState(false);
   const [activeTab, setActiveTab] = useState("crop");
   
@@ -193,6 +311,60 @@ function App() {
            alert("Image copied to clipboard!");
          } catch (err) { alert("Clipboard copy failed."); }
        }, "image/png");
+    },
+    downloadActivePiece: () => {
+      if (!cropperRef.current) return;
+      const cellCanvas = getGridPieceCanvas(cropperRef.current, settings, settings.gridSelectedIndex, protectionRef.current);
+      if (!cellCanvas) return;
+
+      let format = settings.format;
+      if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') format = 'image/png';
+      const ext = format.split("/")[1];
+
+      cellCanvas.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.download = `cropyfier-split-part-${Math.floor(settings.gridSelectedIndex / settings.gridCols) + 1}_${(settings.gridSelectedIndex % settings.gridCols) + 1}-${Date.now()}.${ext}`;
+          link.href = url;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, format, settings.quality);
+    },
+    downloadAllPieces: async () => {
+      if (!cropperRef.current) return;
+      const cols = Math.max(1, settings.gridCols || 1);
+      const rows = Math.max(1, settings.gridRows || 1);
+      const total = cols * rows;
+
+      if (total > 25) {
+          const confirmDownload = window.confirm(`You are about to download ${total} images. Your browser might prompt you to allow multiple file downloads. Proceed?`);
+          if (!confirmDownload) return;
+      }
+
+      let format = settings.format;
+      if ((settings.removeColorActive || settings.isRound) && format === 'image/jpeg') format = 'image/png';
+      const ext = format.split("/")[1];
+
+      for (let i = 0; i < total; i++) {
+          const cellCanvas = getGridPieceCanvas(cropperRef.current, settings, i, protectionRef.current);
+          if (!cellCanvas) continue;
+
+          await new Promise((resolve) => {
+              cellCanvas.toBlob((blob) => {
+                  if (blob) {
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.download = `cropyfier-split-part-${Math.floor(i / cols) + 1}_${(i % cols) + 1}-${Date.now()}.${ext}`;
+                      link.href = url;
+                      link.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }
+                  resolve();
+              }, format, settings.quality);
+          });
+          await new Promise(r => setTimeout(r, 150));
+      }
     }
   };
 

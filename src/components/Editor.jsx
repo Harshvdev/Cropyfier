@@ -21,6 +21,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
     const generationRef = useRef(0);
     const rafRef = useRef(null);
+    const prevSettingsRef = useRef(null);
 
     useEffect(() => {
         actions.registerCropper(cropperInstanceRef);
@@ -28,12 +29,71 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     }, [actions]);
 
     const filterString = getFilterString(settings);
-    const isComplexMode = settings.removeColorActive || settings.watermarkText;
+    const isComplexMode = settings.removeColorActive || settings.watermarkText || settings.gridSplitActive;
     const isBrushActive = settings.brushActive;
 
     // --- PREVIEW GENERATOR ---
     const generatePreview = useCallback(() => {
         if (!isComplexMode || !image || isInteracting) return;
+
+        const prev = prevSettingsRef.current;
+        prevSettingsRef.current = settings;
+
+        if (prev) {
+            const canvasSettingsChanged = 
+                settings.brightness !== prev.brightness ||
+                settings.contrast !== prev.contrast ||
+                settings.saturation !== prev.saturation ||
+                settings.grayscale !== prev.grayscale ||
+                settings.sepia !== prev.sepia ||
+                settings.invert !== prev.invert ||
+                settings.hue !== prev.hue ||
+                settings.blur !== prev.blur ||
+                settings.removeColorActive !== prev.removeColorActive ||
+                settings.removeColorHex !== prev.removeColorHex ||
+                settings.removeTolerance !== prev.removeTolerance ||
+                settings.removeErosion !== prev.removeErosion ||
+                settings.removeContiguousOnly !== prev.removeContiguousOnly ||
+                settings.removeGridActive !== prev.removeGridActive ||
+                settings.removeGridRows !== prev.removeGridRows ||
+                settings.removeGridCols !== prev.removeGridCols ||
+                settings.showMaskPreview !== prev.showMaskPreview ||
+                settings.brushActive !== prev.brushActive ||
+                settings.watermarkText !== prev.watermarkText ||
+                settings.watermarkSize !== prev.watermarkSize ||
+                settings.watermarkOpacity !== prev.watermarkOpacity ||
+                settings.watermarkColor !== prev.watermarkColor ||
+                settings.watermarkPos !== prev.watermarkPos ||
+                settings.isRound !== prev.isRound ||
+                settings.scaleX !== prev.scaleX ||
+                settings.scaleY !== prev.scaleY ||
+                settings.rotation !== prev.rotation ||
+                settings.gridSplitActive !== prev.gridSplitActive ||
+                settings.gridSinglePieceView !== prev.gridSinglePieceView ||
+                settings.gridEditMode !== prev.gridEditMode ||
+                settings.gridPieceSettings !== prev.gridPieceSettings;
+
+            if (!canvasSettingsChanged) {
+                if (settings.gridSplitActive) {
+                    if (settings.gridSinglePieceView) {
+                        const singlePieceChanged = 
+                            settings.gridSelectedIndex !== prev.gridSelectedIndex ||
+                            settings.gridCols !== prev.gridCols ||
+                            settings.gridRows !== prev.gridRows;
+                        if (!singlePieceChanged) return;
+                    } else {
+                        const isIndividual = settings.gridEditMode === 'individual';
+                        const hasAnyOverrides = isIndividual && Object.values(settings.gridPieceSettings || {}).some(p => p && Object.keys(p).length > 0);
+                        const gridDimensionsChanged = 
+                            settings.gridCols !== prev.gridCols ||
+                            settings.gridRows !== prev.gridRows;
+                        if (!gridDimensionsChanged || !hasAnyOverrides) return;
+                    }
+                } else {
+                    return;
+                }
+            }
+        }
 
         setIsProcessing(true);
         const genId = ++generationRef.current;
@@ -64,13 +124,20 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
     }, [settings, image, isInteracting, isComplexMode]);
 
+    // Trigger preview generation when the generator callback updates
     useEffect(() => {
         generatePreview();
         return () => {
             generationRef.current = -1; // Invalidate pending toBlob callbacks
-            setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
         };
     }, [generatePreview]);
+
+    // Only clean up the object URL and reset to null when the base image changes or the component unmounts
+    useEffect(() => {
+        return () => {
+            setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+        };
+    }, [image]);
 
     // --- DRAWING LOGIC ---
     const getPointerPos = (e, canvas) => {
@@ -180,12 +247,12 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             }
             pCanvas.style.width = widthPx; pCanvas.style.height = heightPx; pCanvas.style.transform = transform;
 
-            const shouldShow = isComplexMode && previewUrl && !isComparing && !isInteracting;
+            const shouldShow = (isComplexMode && previewUrl && !isComparing && !isInteracting) || settings.gridSplitActive;
             overlay.style.display = shouldShow ? 'block' : 'none';
             pCanvas.style.display = isBrushActive ? 'block' : 'none';
             pCanvas.style.zIndex = 50; pCanvas.style.pointerEvents = 'none'; 
         });
-    }, [previewUrl, isComparing, isInteracting, settings.isRound, settings.selectedPreset, isComplexMode, isBrushActive]);
+    }, [previewUrl, isComparing, isInteracting, settings.isRound, settings.selectedPreset, isComplexMode, isBrushActive, activeTab, settings.gridSplitActive]);
 
     useEffect(() => { syncOverlayPosition(); }, [syncOverlayPosition]);
 
@@ -219,8 +286,8 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
 
     // Reset Crop UI
     useEffect(() => {
-        const needsCropUI = activeTab === 'crop' || activeTab === 'watermark';
-        if (!needsCropUI) {
+        const shouldResetCropBox = activeTab !== 'crop' && activeTab !== 'watermark';
+        if (shouldResetCropBox) {
              const cropper = cropperInstanceRef.current;
              if (cropper && cropper.canvas) {
                 try {
@@ -242,7 +309,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const wrapper = wrapperRef.current;
         const cropper = cropperInstanceRef.current;
         if (!wrapper || !cropper) return;
-        const needsCropUI = activeTab === 'crop' || activeTab === 'watermark';
+        const needsCropUI = (activeTab === 'crop' && !settings.gridSplitActive) || activeTab === 'watermark';
         if (needsCropUI && !isBrushActive) { cropper.enable(); wrapper.classList.remove('cropper-disabled'); } 
         else { cropper.disable(); wrapper.classList.add('cropper-disabled'); }
         if (isComplexMode && !isComparing && !isInteracting) { wrapper.classList.add('complex-mode-active'); } 
@@ -254,7 +321,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         else if (activeTab === 'watermark' && settings.watermarkText && typeof settings.watermarkPos === 'object') targetCursor = 'move';
         else if (activeTab === 'crop') targetCursor = 'crosshair';
         document.body.style.cursor = targetCursor;
-    }, [activeTab, isBrushActive, isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, isComparing, isComplexMode, isInteracting]);
+    }, [activeTab, isBrushActive, isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, isComparing, isComplexMode, isInteracting, settings.gridSplitActive]);
 
     const handleWrapperClick = async (e) => {
         if (isBrushActive) return;
@@ -312,7 +379,82 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             <canvas ref={protectionCanvasRef} className="absolute top-0 left-0 z-30 pointer-events-none" style={{ display: 'none' }} />
             <div ref={overlayRef} className="absolute top-0 left-0 z-20 pointer-events-none" style={{ top: 0, left: 0, display: 'none', borderRadius: settings.isRound ? '50%' : '0' }}>
                 {isComplexMode && (<div className="absolute inset-0 transparency-grid opacity-50 z-0" style={{ borderRadius: settings.isRound ? '50%' : '0' }}></div>)}
-                {previewUrl && (<img src={previewUrl} className="w-full h-full relative z-10" style={{ objectFit: 'fill', imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto', borderRadius: settings.isRound ? '50%' : '0' }} alt="Preview" />)}
+                
+                {/* IMAGE RENDER */}
+                {settings.gridSplitActive && settings.gridSinglePieceView ? (
+                    // Single Piece isolated view
+                    <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: settings.isRound ? '50%' : '0' }}>
+                        <img 
+                            src={previewUrl || image} 
+                            className="absolute top-0 left-0" 
+                            style={{
+                                width: `${(Math.max(1, parseInt(settings.gridCols) || 1)) * 100}%`,
+                                height: `${(Math.max(1, parseInt(settings.gridRows) || 1)) * 100}%`,
+                                transform: `translate(-${(((settings.gridSelectedIndex || 0) % (Math.max(1, parseInt(settings.gridCols) || 1))) / (Math.max(1, parseInt(settings.gridCols) || 1))) * 100}%, -${(Math.floor((settings.gridSelectedIndex || 0) / (Math.max(1, parseInt(settings.gridCols) || 1))) / (Math.max(1, parseInt(settings.gridRows) || 1))) * 100}%)`,
+                                objectFit: 'fill',
+                                imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto',
+                                maxWidth: 'none',
+                                maxHeight: 'none',
+                            }} 
+                            alt="Single Piece Preview" 
+                        />
+                    </div>
+                ) : (
+                    // Standard full-view (can be previewUrl or raw image if previewUrl is null and we are in gridSplit tab)
+                    (previewUrl || settings.gridSplitActive) && (
+                        <img 
+                            src={previewUrl || image} 
+                            className="w-full h-full relative z-10" 
+                            style={{ 
+                                objectFit: 'fill', 
+                                imageRendering: settings.interpolation === 'pixelated' ? 'pixelated' : 'auto', 
+                                borderRadius: settings.isRound ? '50%' : '0' 
+                            }} 
+                            alt="Preview" 
+                        />
+                    )
+                )}
+
+                {/* Grid splitter interactive overlay */}
+                {settings.gridSplitActive && !settings.gridSinglePieceView && (
+                    <div 
+                        className="absolute inset-0 z-25"
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${Math.max(1, parseInt(settings.gridCols) || 1)}, 1fr)`,
+                            gridTemplateRows: `repeat(${Math.max(1, parseInt(settings.gridRows) || 1)}, 1fr)`,
+                            border: '2px solid #3b82f6',
+                        }}
+                    >
+                        {Array.from({ length: (Math.max(1, parseInt(settings.gridRows) || 1)) * (Math.max(1, parseInt(settings.gridCols) || 1)) }).map((_, idx) => {
+                            const isSelected = idx === settings.gridSelectedIndex;
+                            return (
+                                <div 
+                                    key={idx}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSettings(s => ({ ...s, gridSelectedIndex: idx }));
+                                    }}
+                                    className={`border-[0.5px] border-white/30 transition-all cursor-pointer flex items-center justify-center relative pointer-events-auto ${
+                                        isSelected 
+                                        ? 'bg-blue-500/20 border-2 border-blue-400 z-10 shadow-[0_0_15px_rgba(59,130,246,0.6)]' 
+                                        : 'hover:bg-white/10'
+                                    }`}
+                                >
+                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shadow ${
+                                        isSelected 
+                                        ? 'bg-blue-500 text-white' 
+                                        : 'bg-black/60 text-white/80'
+                                    }`}>
+                                        {idx + 1}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Visual Grid Mode overlay in Tune tab */}
                 {settings.removeColorActive && settings.removeGridActive && activeTab === 'tune' && (
                     <div 
                         className="absolute inset-0 z-20 pointer-events-none grid"

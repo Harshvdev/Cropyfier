@@ -21,7 +21,7 @@ export default function Sidebar({ settings, setSettings, actions, activeTab, set
 
   const renderPanel = () => {
     switch(activeTab) {
-      case "crop": return <CropPanel settings={settings} actions={actions} />;
+      case "crop": return <CropPanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "resize": return <ResizePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "tune": return <TunePanel settings={settings} setSettings={setSettings} actions={actions} />;
       case "watermark": return <WatermarkPanel settings={settings} setSettings={setSettings} />;
