@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
       watermarkText: "", watermarkSize: 40,
       watermarkOpacity: 0.8, watermarkColor: "#ffffff",
       watermarkPos: "Center", 
+      rotation: 0, scaleX: 1, scaleY: 1
   }
 };
 
@@ -75,15 +76,38 @@ function App() {
                   const idx = next.gridSelectedIndex;
                   const pieceOverrides = next.gridPieceSettings[idx] || {};
                   
-                  const cleanAdjustments = {
-                      brightness: 100, contrast: 100, saturation: 100, grayscale: 0, sepia: 0, invert: 0, hue: 0, blur: 0,
-                      removeColorActive: false, removeColorHex: "#ffffff", removeTolerance: 10, removeErosion: 0, removeContiguousOnly: true, removeGridActive: false, removeGridRows: 8, removeGridCols: 8, showMaskPreview: true, brushActive: false,
-                      watermarkText: "", watermarkSize: 40, watermarkOpacity: 0.8, watermarkColor: "#ffffff", watermarkPos: "Center"
+                  const baselineAdjustments = {
+                      brightness: next.globalSettingsBackup?.brightness ?? 100,
+                      contrast: next.globalSettingsBackup?.contrast ?? 100,
+                      saturation: next.globalSettingsBackup?.saturation ?? 100,
+                      grayscale: next.globalSettingsBackup?.grayscale ?? 0,
+                      sepia: next.globalSettingsBackup?.sepia ?? 0,
+                      invert: next.globalSettingsBackup?.invert ?? 0,
+                      hue: next.globalSettingsBackup?.hue ?? 0,
+                      blur: next.globalSettingsBackup?.blur ?? 0,
+                      removeColorActive: next.globalSettingsBackup?.removeColorActive ?? false,
+                      removeColorHex: next.globalSettingsBackup?.removeColorHex ?? "#ffffff",
+                      removeTolerance: next.globalSettingsBackup?.removeTolerance ?? 10,
+                      removeErosion: next.globalSettingsBackup?.removeErosion ?? 0,
+                      removeContiguousOnly: next.globalSettingsBackup?.removeContiguousOnly ?? true,
+                      removeGridActive: next.globalSettingsBackup?.removeGridActive ?? false,
+                      removeGridRows: next.globalSettingsBackup?.removeGridRows ?? 8,
+                      removeGridCols: next.globalSettingsBackup?.removeGridCols ?? 8,
+                      showMaskPreview: next.globalSettingsBackup?.showMaskPreview ?? true,
+                      brushActive: next.globalSettingsBackup?.brushActive ?? false,
+                      watermarkText: next.globalSettingsBackup?.watermarkText ?? "",
+                      watermarkSize: next.globalSettingsBackup?.watermarkSize ?? 40,
+                      watermarkOpacity: next.globalSettingsBackup?.watermarkOpacity ?? 0.8,
+                      watermarkColor: next.globalSettingsBackup?.watermarkColor ?? "#ffffff",
+                      watermarkPos: next.globalSettingsBackup?.watermarkPos ?? "Center",
+                      rotation: next.globalSettingsBackup?.rotation ?? 0,
+                      scaleX: next.globalSettingsBackup?.scaleX ?? 1,
+                      scaleY: next.globalSettingsBackup?.scaleY ?? 1
                   };
                   
                   next = {
                       ...next,
-                      ...cleanAdjustments,
+                      ...baselineAdjustments,
                       ...pieceOverrides
                   };
               } else {
@@ -96,42 +120,37 @@ function App() {
           
           if (next.gridSplitActive && next.gridEditMode === 'individual') {
               const idx = next.gridSelectedIndex;
-              const currentPieceSettings = next.gridPieceSettings[idx] || {};
               
               const nonOverrideKeys = [
                   'gridSplitActive', 'gridCols', 'gridRows', 'gridSelectedIndex', 
                   'gridEditMode', 'gridSinglePieceView', 'gridPieceSettings', 'globalSettingsBackup',
-                  'scaleX', 'scaleY', 'rotation', 'customWidth', 'customHeight', 
+                  'customWidth', 'customHeight', 
                   'lockAspectRatio', 'isRound', 'aspectRatio', 'selectedPreset', 
                   'format', 'quality', 'unit', 'dpi', 'interpolation'
               ];
               
-              const updatedPieceSettings = { ...currentPieceSettings };
+              const updatedPieceSettings = {};
               let hasChanges = false;
               
               Object.keys(next).forEach(key => {
                   if (!nonOverrideKeys.includes(key)) {
-                      if (next[key] !== prev[key]) {
+                      const backupVal = next.globalSettingsBackup?.[key] ?? DEFAULT_SETTINGS[key];
+                      if (next[key] !== backupVal) {
                           updatedPieceSettings[key] = next[key];
                           hasChanges = true;
                       }
                   }
               });
               
-              if (hasChanges) {
-                  next = {
-                      ...next,
-                      gridPieceSettings: {
-                          ...next.gridPieceSettings,
-                          [idx]: updatedPieceSettings
-                      }
-                  };
-              }
+              next = {
+                  ...next,
+                  gridPieceSettings: hasChanges ? { [idx]: updatedPieceSettings } : {}
+              };
           } else {
               const nonOverrideKeys = [
                   'gridSplitActive', 'gridCols', 'gridRows', 'gridSelectedIndex', 
                   'gridEditMode', 'gridSinglePieceView', 'gridPieceSettings', 'globalSettingsBackup',
-                  'scaleX', 'scaleY', 'rotation', 'customWidth', 'customHeight', 
+                  'customWidth', 'customHeight', 
                   'lockAspectRatio', 'isRound', 'aspectRatio', 'selectedPreset', 
                   'format', 'quality', 'unit', 'dpi', 'interpolation'
               ];
@@ -266,13 +285,25 @@ function App() {
       }
     },
     rotate: (deg) => {
-      if (cropperRef.current) { cropperRef.current.rotate(deg); setSettings(s => ({ ...s, rotation: s.rotation + deg })); }
+      if (settings.gridSplitActive && settings.gridEditMode === 'individual') {
+        setSettings(s => ({ ...s, rotation: s.rotation + deg }));
+      } else {
+        if (cropperRef.current) { cropperRef.current.rotate(deg); setSettings(s => ({ ...s, rotation: s.rotation + deg })); }
+      }
     },
     flipHorizontal: () => {
-      if (cropperRef.current) { const newScale = settings.scaleX === 1 ? -1 : 1; cropperRef.current.scaleX(newScale); setSettings(s => ({ ...s, scaleX: newScale })); }
+      if (settings.gridSplitActive && settings.gridEditMode === 'individual') {
+        setSettings(s => ({ ...s, scaleX: s.scaleX === 1 ? -1 : 1 }));
+      } else {
+        if (cropperRef.current) { const newScale = settings.scaleX === 1 ? -1 : 1; cropperRef.current.scaleX(newScale); setSettings(s => ({ ...s, scaleX: newScale })); }
+      }
     },
     flipVertical: () => {
-      if (cropperRef.current) { const newScale = settings.scaleY === 1 ? -1 : 1; cropperRef.current.scaleY(newScale); setSettings(s => ({ ...s, scaleY: newScale })); }
+      if (settings.gridSplitActive && settings.gridEditMode === 'individual') {
+        setSettings(s => ({ ...s, scaleY: s.scaleY === 1 ? -1 : 1 }));
+      } else {
+        if (cropperRef.current) { const newScale = settings.scaleY === 1 ? -1 : 1; cropperRef.current.scaleY(newScale); setSettings(s => ({ ...s, scaleY: newScale })); }
+      }
     },
     handleCustomSize: (val, type) => setSettings(s => ({ ...s, [type === 'w' ? 'customWidth' : 'customHeight']: val, selectedPreset: null })),
     handleUnitChange: (u) => setSettings(s => ({ ...s, unit: u })),

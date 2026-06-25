@@ -19,11 +19,13 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
 
       // Optimization 1: If no individual overrides exist at all, just render a single baseline canvas
       if (!hasAnyOverrides) {
-          const dummySettings = { ...settings, gridSplitActive: false };
+          const baselineAdjustments = isIndividual ? (settings.globalSettingsBackup || {}) : {};
+          const dummySettings = { ...settings, ...baselineAdjustments, gridSplitActive: false };
           return generateCanvas(cropper, dummySettings, protectionCanvas, isPreview, true);
       }
 
-      const dummySettings = { ...settings, gridSplitActive: false };
+      const baselineAdjustments = isIndividual ? (settings.globalSettingsBackup || {}) : {};
+      const dummySettings = { ...settings, ...baselineAdjustments, gridSplitActive: false };
       const dummyCanvas = generateCanvas(cropper, dummySettings, protectionCanvas, isPreview, true);
       if (!dummyCanvas) return null;
 
@@ -46,9 +48,9 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
 
           // Optimization 2: Only render specific cells that have overrides. Copy directly from baseline for others.
           if (hasOverrides) {
-              const cellCanvas = getGridPieceCanvas(cropper, settings, i, protectionCanvas, true);
+              const cellCanvas = getGridPieceCanvas(cropper, settings, i, protectionCanvas, true, isPreview);
               if (cellCanvas) {
-                  stitchCtx.drawImage(cellCanvas, col * cellW, row * cellH);
+                  stitchCtx.drawImage(cellCanvas, col * cellW, row * cellH, cellW, cellH);
               }
           } else {
               stitchCtx.drawImage(
@@ -511,7 +513,7 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
   return filterCanvas;
 };
 
-export const getGridPieceCanvas = (cropper, settings, index, protectionCanvas = null, isSubCellRender = false) => {
+export const getGridPieceCanvas = (cropper, settings, index, protectionCanvas = null, isSubCellRender = false, isPreview = false) => {
   if (!cropper) return null;
 
   const cols = Math.max(1, settings.gridCols || 1);
@@ -525,21 +527,42 @@ export const getGridPieceCanvas = (cropper, settings, index, protectionCanvas = 
     ? { ...settings, ...settings.globalSettingsBackup, ...pieceOverrides }
     : { ...settings };
 
-  const fullCanvas = generateCanvas(cropper, { ...cellSettings, showMaskPreview: false }, protectionCanvas, false, true);
+  // Strip rotation and flips from cellSettings when rendering fullCanvas, 
+  // since they are applied per-cell inside cellCanvas!
+  const dummyCellSettings = { ...cellSettings, rotation: 0, scaleX: 1, scaleY: 1 };
+  const fullCanvas = generateCanvas(cropper, { ...dummyCellSettings, showMaskPreview: false }, protectionCanvas, isPreview, true);
   if (!fullCanvas) return null;
 
   const cellW = fullCanvas.width / cols;
   const cellH = fullCanvas.height / rows;
 
+  const cellRotation = cellSettings.rotation || 0;
+  const isRotated90or270 = (cellRotation % 180) !== 0;
+  const targetW = isRotated90or270 ? cellH : cellW;
+  const targetH = isRotated90or270 ? cellW : cellH;
+
   const cellCanvas = document.createElement('canvas');
-  cellCanvas.width = cellW;
-  cellCanvas.height = cellH;
+  cellCanvas.width = targetW;
+  cellCanvas.height = targetH;
   const cellCtx = cellCanvas.getContext('2d');
+
+  // Translate to center for rotation/flip transformations
+  cellCtx.translate(targetW / 2, targetH / 2);
+
+  if (cellRotation) {
+      cellCtx.rotate((cellRotation * Math.PI) / 180);
+  }
+
+  const flipX = cellSettings.scaleX || 1;
+  const flipY = cellSettings.scaleY || 1;
+  if (flipX !== 1 || flipY !== 1) {
+      cellCtx.scale(flipX, flipY);
+  }
 
   cellCtx.drawImage(
       fullCanvas,
       col * cellW, row * cellH, cellW, cellH,
-      0, 0, cellW, cellH
+      -cellW / 2, -cellH / 2, cellW, cellH
   );
 
   return cellCanvas;
