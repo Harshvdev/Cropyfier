@@ -227,7 +227,14 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const imageData = cropper.getImageData();
             const container = wrapper.querySelector('.cropper-container');
 
-            if (!container || cropBoxData.width === 0 || settings.selectedPreset === 'view') {
+            if (!container) {
+                overlay.style.display = 'none'; pCanvas.style.display = 'none'; return;
+            }
+
+            const isViewMode = settings.selectedPreset === 'view' || !cropper.cropped;
+            const targetBox = isViewMode ? canvasData : cropBoxData;
+
+            if (!targetBox || targetBox.width === 0) {
                 overlay.style.display = 'none'; pCanvas.style.display = 'none'; return;
             }
 
@@ -247,13 +254,13 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
             const offsetX = containerRect.left - absoluteOriginX;
             const offsetY = containerRect.top - absoluteOriginY;
 
-            const transform = `translate3d(${offsetX + cropBoxData.left}px, ${offsetY + cropBoxData.top}px, 0)`;
-            const widthPx = `${cropBoxData.width}px`;
-            const heightPx = `${cropBoxData.height}px`;
+            const transform = `translate3d(${offsetX + targetBox.left}px, ${offsetY + targetBox.top}px, 0)`;
+            const widthPx = `${targetBox.width}px`;
+            const heightPx = `${targetBox.height}px`;
 
             const naturalScale = imageData.naturalWidth / canvasData.width;
-            const internalWidth = Math.round(cropBoxData.width * naturalScale);
-            const internalHeight = Math.round(cropBoxData.height * naturalScale);
+            const internalWidth = Math.round(targetBox.width * naturalScale);
+            const internalHeight = Math.round(targetBox.height * naturalScale);
 
             overlay.style.width = widthPx; overlay.style.height = heightPx;
             overlay.style.transform = transform; overlay.style.borderRadius = settings.isRound ? '50%' : '0';
@@ -277,9 +284,19 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
     useLayoutEffect(() => {
         if (image && imageElementRef.current) {
             if (cropperInstanceRef.current) cropperInstanceRef.current.destroy();
+            const isViewMode = settings.selectedPreset === 'view';
             const cropper = new Cropper(imageElementRef.current, {
-                viewMode: 1, dragMode: 'crop', zoomable: false, guides: true, background: false, autoCropArea: 0.8,
-                ready: () => { if (settings.scaleX !== 1) cropper.scaleX(settings.scaleX); syncOverlayPosition(); generatePreview(); },
+                viewMode: 1, dragMode: 'crop', zoomable: false, guides: true, background: false,
+                autoCrop: !isViewMode, autoCropArea: 0.8,
+                ready: () => {
+                    if (settings.scaleX !== 1) cropper.scaleX(settings.scaleX);
+                    if (isViewMode) {
+                        cropper.clear();
+                        cropper.disable();
+                    }
+                    syncOverlayPosition();
+                    generatePreview();
+                },
                 crop: () => syncOverlayPosition(),
                 cropstart: () => setIsInteracting(true),
                 cropend: () => { setIsInteracting(false); setTimeout(generatePreview, 10); },
@@ -306,7 +323,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const shouldResetCropBox = activeTab !== 'crop' && activeTab !== 'watermark';
         if (shouldResetCropBox) {
             const cropper = cropperInstanceRef.current;
-            if (cropper && cropper.canvas) {
+            if (cropper && cropper.canvas && cropper.cropped) {
                 try {
                     const canvasData = cropper.getCanvasData();
                     const cropBoxData = cropper.getCropBoxData();
@@ -326,7 +343,7 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         const wrapper = wrapperRef.current;
         const cropper = cropperInstanceRef.current;
         if (!wrapper || !cropper) return;
-        const needsCropUI = (activeTab === 'crop' && !settings.gridSplitActive) || activeTab === 'watermark';
+        const needsCropUI = (activeTab === 'crop' && !settings.gridSplitActive && settings.selectedPreset !== 'view') || activeTab === 'watermark';
         if (needsCropUI && !isBrushActive) { cropper.enable(); wrapper.classList.remove('cropper-disabled'); }
         else { cropper.disable(); wrapper.classList.add('cropper-disabled'); }
         if (isComplexMode && !isComparing && !isInteracting) { wrapper.classList.add('complex-mode-active'); }
@@ -336,9 +353,9 @@ export default function Editor({ image, settings, setSettings, isPicking, setIsP
         if (isBrushActive) targetCursor = 'crosshair';
         else if (isPicking) targetCursor = 'alias';
         else if (activeTab === 'watermark' && settings.watermarkText && typeof settings.watermarkPos === 'object') targetCursor = 'move';
-        else if (activeTab === 'crop') targetCursor = 'crosshair';
+        else if (activeTab === 'crop' && settings.selectedPreset !== 'view') targetCursor = 'crosshair';
         document.body.style.cursor = targetCursor;
-    }, [activeTab, isBrushActive, isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, isComparing, isComplexMode, isInteracting, settings.gridSplitActive]);
+    }, [activeTab, isBrushActive, isPicking, settings.dragMode, settings.watermarkText, settings.watermarkPos, isComparing, isComplexMode, isInteracting, settings.gridSplitActive, settings.selectedPreset]);
 
     const handleWrapperClick = async (e) => {
         if (isBrushActive) return;

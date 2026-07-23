@@ -83,8 +83,11 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
         if (isNaN(h) || h <= 0) h = 0;
 
         const dpi = settings.dpi || 300;
-        const data = cropper.getData();
-        const ratio = data.width / data.height;
+        const data = cropper.getData ? cropper.getData() : {};
+        const imgData = cropper.getImageData ? cropper.getImageData() : {};
+        const srcWidth = (cropper.cropped && data.width) ? data.width : (imgData.naturalWidth || 1);
+        const srcHeight = (cropper.cropped && data.height) ? data.height : (imgData.naturalHeight || 1);
+        const ratio = srcWidth / srcHeight;
 
         if (!w && h) w = h * ratio;
         if (!h && w) h = w / ratio;
@@ -101,9 +104,12 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
     // 2b. Preview Size Capping (Crucial for high performance on big images)
     if (isPreview) {
         const maxPreviewSize = 1024;
-        const data = cropper.getData();
-        let w = options.width || data.width;
-        let h = options.height || data.height;
+        const data = cropper.getData ? cropper.getData() : {};
+        const imgData = cropper.getImageData ? cropper.getImageData() : {};
+        const srcWidth = (cropper.cropped && data.width) ? data.width : (imgData.naturalWidth || 1);
+        const srcHeight = (cropper.cropped && data.height) ? data.height : (imgData.naturalHeight || 1);
+        let w = options.width || srcWidth;
+        let h = options.height || srcHeight;
         if (w > maxPreviewSize || h > maxPreviewSize) {
             const ratio = w / h;
             if (w > h) {
@@ -117,7 +123,48 @@ export const generateCanvas = (cropper, settings, protectionCanvas = null, isPre
     }
 
     // 3. Get Base Image
-    const rawCanvas = cropper.getCroppedCanvas(options);
+    let rawCanvas = cropper.getCroppedCanvas(options);
+    if (!rawCanvas && cropper.element) {
+        const imgData = typeof cropper.getImageData === 'function' ? cropper.getImageData() : null;
+        const naturalWidth = imgData?.naturalWidth || cropper.element.naturalWidth;
+        const naturalHeight = imgData?.naturalHeight || cropper.element.naturalHeight;
+
+        if (naturalWidth && naturalHeight) {
+            const rotation = (imgData?.rotate || 0) % 360;
+            const isRotated90or270 = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
+
+            const srcW = isRotated90or270 ? naturalHeight : naturalWidth;
+            const srcH = isRotated90or270 ? naturalWidth : naturalHeight;
+
+            const canvasW = options.width || srcW;
+            const canvasH = options.height || srcH;
+
+            rawCanvas = document.createElement("canvas");
+            rawCanvas.width = canvasW;
+            rawCanvas.height = canvasH;
+            const rCtx = rawCanvas.getContext("2d");
+
+            if (options.fillColor && options.fillColor !== "transparent") {
+                rCtx.fillStyle = options.fillColor;
+                rCtx.fillRect(0, 0, canvasW, canvasH);
+            }
+
+            rCtx.imageSmoothingEnabled = options.imageSmoothingEnabled !== false;
+            if (options.imageSmoothingQuality) rCtx.imageSmoothingQuality = options.imageSmoothingQuality;
+
+            rCtx.save();
+            rCtx.translate(canvasW / 2, canvasH / 2);
+            if (rotation) rCtx.rotate((rotation * Math.PI) / 180);
+            const scaleX = imgData?.scaleX || 1;
+            const scaleY = imgData?.scaleY || 1;
+            if (scaleX !== 1 || scaleY !== 1) rCtx.scale(scaleX, scaleY);
+
+            const drawW = isRotated90or270 ? canvasH : canvasW;
+            const drawH = isRotated90or270 ? canvasW : canvasH;
+            rCtx.drawImage(cropper.element, -drawW / 2, -drawH / 2, drawW, drawH);
+            rCtx.restore();
+        }
+    }
     if (!rawCanvas) return null;
 
     // 4. Create Working Canvas

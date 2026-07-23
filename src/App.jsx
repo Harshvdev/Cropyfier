@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
   // Geometry
   scaleX: 1, scaleY: 1, rotation: 0,
   customWidth: "", customHeight: "", lockAspectRatio: true,
-  isRound: false, aspectRatio: NaN, selectedPreset: "free",
+  isRound: false, aspectRatio: NaN, selectedPreset: "view",
   
   // Format
   format: "image/jpeg", quality: 0.9, 
@@ -281,18 +281,23 @@ function App() {
 
     setPresetRatio: (ratio, label) => {
       setSettings(s => ({ ...s, isRound: false, aspectRatio: ratio, selectedPreset: label, customWidth: "", customHeight: "" }));
-      if (cropperRef.current) { cropperRef.current.enable(); cropperRef.current.setAspectRatio(ratio); }
+      if (cropperRef.current) { cropperRef.current.enable(); cropperRef.current.crop(); cropperRef.current.setAspectRatio(ratio); }
     },
     toggleRound: () => {
-      setSettings(s => ({ ...s, isRound: true, aspectRatio: 1, selectedPreset: "circle" }));
-      if (cropperRef.current) { cropperRef.current.enable(); cropperRef.current.setAspectRatio(1); }
+      if (settings.isRound) {
+        setSettings(s => ({ ...s, isRound: false, selectedPreset: "view" }));
+        if (cropperRef.current) { cropperRef.current.clear(); cropperRef.current.disable(); }
+      } else {
+        setSettings(s => ({ ...s, isRound: true, aspectRatio: 1, selectedPreset: "circle" }));
+        if (cropperRef.current) { cropperRef.current.enable(); cropperRef.current.crop(); cropperRef.current.setAspectRatio(1); }
+      }
     },
     setFree: () => {
       if (settings.selectedPreset === "free") {
          setSettings(s => ({ ...s, selectedPreset: "view" }));
          if (cropperRef.current) { cropperRef.current.clear(); cropperRef.current.disable(); }
       } else {
-         setSettings(s => ({ ...s, aspectRatio: NaN, selectedPreset: "free" }));
+         setSettings(s => ({ ...s, isRound: false, aspectRatio: NaN, selectedPreset: "free" }));
          if (cropperRef.current) { cropperRef.current.enable(); cropperRef.current.crop(); cropperRef.current.setAspectRatio(NaN); }
       }
     },
